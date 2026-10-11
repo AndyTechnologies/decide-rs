@@ -24,4 +24,4 @@
 - `3957c2f` feat: add minimal julia1 integration with choice, noul, and score (branch `feat/phase-1-julia1-integration`)
 - PR: https://github.com/AndyTechnologies/decide-rs/pull/1 (base `main`)
 - Verificación gentle-ai-verify: 8/8 PASS (fmt, build, test 4 passed + 3 ignored, 286 < 300 líneas, deps fijadas, sin download, gating `DECIDE_RS_MODEL_PATH`)
-- Evidencia con pesos reales: pendiente — requiere checkpoint local `a85b127…` y `cargo test --test integration_real_weights -- --ignored`
+- Evidencia con pesos reales: **COMPLETADA 2026-10-11** — checkpoint `a85b127…` descargado a `~/.cache/decide-rs/Julia-1` (577,189,056 bytes), sha256 verificado contra `df853bf7…` ✓; `DECIDE_RS_MODEL_PATH=… cargo test --test integration_real_weights -- --ignored` → **3 passed** en 70.25s (CPU, Linux x86-64)
