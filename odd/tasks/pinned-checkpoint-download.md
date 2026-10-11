@@ -13,8 +13,8 @@
 
 ## Tareas
 
-- [ ] 1. Delegar implementación a gentle-ai-worker
-- [ ] 2. Verificación independiente + PR (objetivo, cambios, tests, limitaciones, decisiones abiertas)
+- [x] 1. Delegar implementación a gentle-ai-worker — 247 líneas cambiadas (checkpoint.rs 128, checkpoint_unit.rs 86, main.rs +23, lib.rs +8, Cargo.toml +2); deps fijadas `ureq = "=2.12.1"`, `sha2 = "=0.10.9"`
+- [x] 2. Verificación independiente (gentle-ai-verify): 10/10 PASS — fmt, build 0 warnings, 7 passed/0 failed/3 ignored, 247 < 300, sin referencias flotantes, `.part`+rename con Content-Length, hash streaming, CLI `fetch` exit 2/1 consistentes
 
 ## Evidencia / commits
 
