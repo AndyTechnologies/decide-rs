@@ -16,9 +16,12 @@
 
 - [x] 1. Delegar implementación a gentle-ai-worker (superficies: Cargo.toml, Cargo.lock, src/lib.rs, src/main.rs, tests/integration_real_weights.rs) — 286 líneas escritas a mano
 - [x] 2. Verificación independiente (gentle-ai-verify): 8/8 PASS — fmt limpio, build 0 warnings, `cargo test` 4 passed/3 ignored, 286 < 300, deps solo julia1+serde_json+anyhow, sin download ni `from_pretrained`
-- [ ] 3. Commit convencional, push y `gh pr create`
-- [ ] 4. Cierre: evidencia en feature doc y reporte
+- [x] 3. Commit convencional, push y `gh pr create`
+- [x] 4. Cierre: evidencia en feature doc y reporte
 
 ## Evidencia / commits
 
-- (pendiente)
+- `3957c2f` feat: add minimal julia1 integration with choice, noul, and score (branch `feat/phase-1-julia1-integration`)
+- PR: https://github.com/AndyTechnologies/decide-rs/pull/1 (base `main`)
+- Verificación gentle-ai-verify: 8/8 PASS (fmt, build, test 4 passed + 3 ignored, 286 < 300 líneas, deps fijadas, sin download, gating `DECIDE_RS_MODEL_PATH`)
+- Evidencia con pesos reales: pendiente — requiere checkpoint local `a85b127…` y `cargo test --test integration_real_weights -- --ignored`
