@@ -1,8 +1,8 @@
 //! Schema tests: no network, no model weights, no inference.
 //! Invalid requests must be rejected with stable paths and messages.
 
-use decide_rs::schema::{QuestionType, RequestState, parse_request};
-use serde_json::{Value, json};
+use decide_rs::schema::{Criteria, QuestionType, RequestState, parse_request};
+use serde_json::{Map, Value, json};
 
 fn q(qtype: &str, criteria: Value) -> Value {
     json!({ "type": qtype, "instructions": "Decide this.", "criteria": criteria })
@@ -21,6 +21,12 @@ fn one(question: Value) -> Value {
 }
 fn sq() -> Value {
     decide_rs::sample_questions()
+}
+fn choice_criteria(count: usize) -> Value {
+    let map: Map<String, Value> = (0..count)
+        .map(|i| (format!("id{i}"), json!(format!("Desc {i}"))))
+        .collect();
+    Value::Object(map)
 }
 
 /// Assert exactly one violation at `path` whose message contains `fragment`.
@@ -63,7 +69,10 @@ fn valid_requests_preserve_structure() {
     );
     let bare = json!({ "type": "noul", "instructions": "Urgent?" });
     let request = parse_request(&json!("s"), &one(bare)).expect("must parse");
-    assert_eq!(request.questions[0].1.criteria, Value::Null);
+    let Criteria::Noul { neg, pos } = &request.questions[0].1.criteria else {
+        panic!("expected noul criteria")
+    };
+    assert_eq!((neg.as_str(), pos.as_str()), ("false", "true"));
 }
 
 // ---------------------------------------------------------------- invalid input
@@ -97,9 +106,10 @@ fn rejects_unknown_or_missing_type() {
 
 #[test]
 fn rejects_structured_instructions_without_coercion() {
-    let obj = json!({ "type": "choice", "instructions": { "x": 1 }, "criteria": { "a": "A" } });
+    let obj =
+        json!({ "type": "choice", "instructions": { "x": 1 }, "criteria": { "a": "A", "b": "B" } });
     field(obj, "instructions", "plain string");
-    let missing = json!({ "type": "choice", "criteria": { "a": "A" } });
+    let missing = json!({ "type": "choice", "criteria": { "a": "A", "b": "B" } });
     field(missing, "instructions", "plain string");
 }
 
@@ -111,6 +121,44 @@ fn rejects_criteria_shape_and_empty_ids() {
     let missing = json!({ "type": "choice", "instructions": "x" });
     field(missing, "criteria", "an object");
     field(ch(json!({ "": "E", "b": "Ok" })), "criteria", "non-empty");
+}
+
+#[test]
+fn rejects_choice_alternative_violations() {
+    field(ch(json!({ "only": "One" })), "criteria", "got 1");
+    let wide = choice_criteria(21);
+    field(ch(wide), "criteria", "got 21");
+    field(ch(json!({ "a": "", "b": "Ok" })), "criteria", "non-empty");
+    field(
+        ch(json!({ "a": "Same", "b": "Same" })),
+        "criteria",
+        "duplicate",
+    );
+}
+
+#[test]
+fn rejects_score_level_violations() {
+    field(sc(json!(["only one"])), "criteria", "got 1");
+    let eleven = json!(
+        (1..=11)
+            .map(|i| json!(format!("Level {i}")))
+            .collect::<Vec<_>>()
+    );
+    field(sc(eleven), "criteria", "got 11");
+    field(sc(json!(["fine", 3])), "criteria", "at index 1");
+    field(sc(json!(["same", "same"])), "criteria", "duplicate");
+}
+
+#[test]
+fn rejects_noul_criteria_violations() {
+    field(nl(json!({ "false": "No" })), "criteria", "missing");
+    let extra = json!({ "false": "No", "true": "Yes", "maybe": "?" });
+    field(nl(extra), "criteria", "unexpected");
+    field(
+        nl(json!({ "false": "No", "true": 1 })),
+        "criteria",
+        "non-empty",
+    );
 }
 
 // ---------------------------------------------------------------- determinism
