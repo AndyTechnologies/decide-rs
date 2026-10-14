@@ -4,6 +4,7 @@
 //! directory. Networking exists only in the explicit [`checkpoint`] module
 //! (revision-pinned, sha256-verified download; ADR 0001 D1).
 pub mod checkpoint;
+pub mod schema;
 
 use julia1::{Answers, Engine, EngineOptions, State};
 use serde_json::Value;
@@ -64,8 +65,15 @@ pub fn sample_questions() -> Value {
     })
 }
 
-/// Run every question in `questions` against `state` in one `predict_typed` call.
+/// Validate `questions` against the typed schema BEFORE inference (ADR 0001).
 pub fn run_decisions(engine: &Engine, state: &str, questions: &Value) -> anyhow::Result<Answers> {
+    schema::parse_request(&Value::String(state.to_owned()), questions).map_err(|errors| {
+        let details: Vec<String> = errors
+            .iter()
+            .map(|e| format!("  {}: {}", e.path, e.message))
+            .collect();
+        anyhow::anyhow!("request rejected before inference:\n{}", details.join("\n"))
+    })?;
     engine.predict_typed(&State::from(state), questions)
 }
 
