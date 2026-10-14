@@ -1,7 +1,7 @@
 //! Typed request schema: deterministic validation BEFORE inference (ADR 0001 D3).
 //! Violations are collected as structured [`SchemaError`]s with stable paths.
 
-use serde_json::Value;
+use serde_json::{Map, Value};
 
 /// Request state as-is: a string, or JSON object/array, never stringified.
 #[derive(Debug, Clone, PartialEq)]
@@ -17,12 +17,20 @@ pub enum QuestionType {
     Score,
 }
 
-/// One validated question; `criteria` is raw JSON, shape-checked only.
+/// Validated per-type criteria; limits and uniqueness enforced.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Criteria {
+    Choice(Vec<(String, String)>), // (id, description) pairs, 2-20, unique descriptions
+    Noul { neg: String, pos: String }, // labels for the fixed false/true keys
+    Score(Vec<String>),            // ordered levels, 2-10, unique
+}
+
+/// One validated question with its typed `criteria`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Question {
     pub qtype: QuestionType,
     pub instructions: String,
-    pub criteria: Value,
+    pub criteria: Criteria,
 }
 
 /// A validated request; `questions` keeps the input document order.
@@ -47,6 +55,25 @@ fn json_kind(value: &Value) -> &'static str {
         Value::String(_) => "string",
         Value::Array(_) => "array",
         Value::Object(_) => "object",
+    }
+}
+
+fn text(value: &Value) -> Option<&str> {
+    value.as_str().filter(|s| !s.is_empty())
+}
+
+/// Reject a value already seen among the alternatives of one criteria list.
+fn push_unique<'a>(
+    seen: &mut Vec<&'a str>,
+    value: &'a str,
+    kind: &str,
+    path: &str,
+    errors: &mut Errors,
+) {
+    if seen.contains(&value) {
+        errors.push(path, format!("duplicate {kind}: \"{value}\""));
+    } else {
+        seen.push(value);
     }
 }
 
@@ -98,25 +125,97 @@ impl QuestionType {
         qpath: &str,
         criteria: Option<&Value>,
         errors: &mut Errors,
-    ) -> Option<Value> {
+    ) -> Option<Criteria> {
+        let before = errors.0.len();
         let cpath = format!("{qpath}.criteria");
-        match self {
+        let parsed = match self {
             Self::Choice => {
-                let raw = shape(criteria, true, "choice needs an object", &cpath, errors);
-                if let Some(Value::Object(map)) = &raw
-                    && map.keys().any(|k| k.is_empty())
-                {
-                    errors.push(&cpath, "choice ids must be non-empty");
+                let Some(Value::Object(map)) =
+                    shape(criteria, true, "choice needs an object", &cpath, errors)
+                else {
+                    return None;
+                };
+                if !(2..=20).contains(&map.len()) {
+                    let n = map.len();
+                    errors.push(&cpath, format!("choice needs 2-20 entries, got {n}"));
                 }
-                raw
+                let mut pairs = Vec::with_capacity(map.len());
+                let mut seen: Vec<&str> = Vec::with_capacity(map.len());
+                for (id, description) in &map {
+                    if id.is_empty() {
+                        errors.push(&cpath, "choice ids must be non-empty");
+                    }
+                    let Some(desc) = text(&description) else {
+                        errors.push(&cpath, "choice description must be non-empty");
+                        continue;
+                    };
+                    push_unique(&mut seen, desc, "choice description", &cpath, errors);
+                    pairs.push((id.clone(), desc.to_owned()));
+                }
+                Criteria::Choice(pairs)
             }
-            Self::Score => shape(criteria, false, "score needs an array", &cpath, errors),
+            Self::Score => {
+                let Some(Value::Array(levels)) =
+                    shape(criteria, false, "score needs an array", &cpath, errors)
+                else {
+                    return None;
+                };
+                if !(2..=10).contains(&levels.len()) {
+                    let n = levels.len();
+                    errors.push(&cpath, format!("score needs 2-10 levels, got {n}"));
+                }
+                let mut parsed_levels = Vec::with_capacity(levels.len());
+                let mut seen: Vec<&str> = Vec::with_capacity(levels.len());
+                for (index, level) in levels.iter().enumerate() {
+                    let Some(desc) = text(level) else {
+                        errors.push(&cpath, format!("score level at index {index} is invalid"));
+                        continue;
+                    };
+                    push_unique(&mut seen, desc, "score level", &cpath, errors);
+                    parsed_levels.push(desc.to_owned());
+                }
+                Criteria::Score(parsed_levels)
+            }
             Self::Noul => match criteria {
-                None => Some(Value::Null),
-                other => shape(other, true, "noul needs an object", &cpath, errors),
+                None | Some(Value::Null) => Criteria::Noul {
+                    neg: "false".into(),
+                    pos: "true".into(),
+                },
+                Some(Value::Object(map)) => return parse_noul(map, &cpath, errors),
+                Some(other) => {
+                    let kind = json_kind(other);
+                    errors.push(&cpath, format!("noul needs an object, got {kind}"));
+                    return None;
+                }
             },
+        };
+        (errors.0.len() == before).then_some(parsed)
+    }
+}
+
+/// Noul criteria: exactly the keys `false` and `true` with nonempty labels.
+fn parse_noul(map: &Map<String, Value>, cpath: &str, errors: &mut Errors) -> Option<Criteria> {
+    let before = errors.0.len();
+    for key in ["false", "true"] {
+        if !map.contains_key(key) {
+            errors.push(cpath, format!("noul missing \"{key}\""));
+        }
+        if let Some(value) = map.get(key)
+            && text(value).is_none()
+        {
+            errors.push(cpath, format!("noul \"{key}\" must be non-empty"));
         }
     }
+    for key in map.keys() {
+        if key != "false" && key != "true" {
+            errors.push(cpath, format!("noul unexpected \"{key}\""));
+        }
+    }
+    let get = |k: &str| map.get(k).and_then(text).unwrap_or_default().to_owned();
+    (errors.0.len() == before).then(|| Criteria::Noul {
+        neg: get("false"),
+        pos: get("true"),
+    })
 }
 
 /// Parse and validate `(state, questions)`; violations are collected in document order.
@@ -148,7 +247,7 @@ pub fn parse_request(state: &Value, questions: &Value) -> Result<Request, Vec<Sc
             errors.push("questions", "question ids must be non-empty");
             continue;
         }
-        let qpath = format!("questions.{qid}");
+        let qpath = format!("{qid}.{qid}");
         let Some(qobj) = qvalue.as_object() else {
             let kind = json_kind(qvalue);
             errors.push(&qpath, format!("question must be an object, got {kind}"));
