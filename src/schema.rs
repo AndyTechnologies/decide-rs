@@ -247,7 +247,7 @@ pub fn parse_request(state: &Value, questions: &Value) -> Result<Request, Vec<Sc
             errors.push("questions", "question ids must be non-empty");
             continue;
         }
-        let qpath = format!("{qid}.{qid}");
+        let qpath = format!("questions.{qid}");
         let Some(qobj) = qvalue.as_object() else {
             let kind = json_kind(qvalue);
             errors.push(&qpath, format!("question must be an object, got {kind}"));

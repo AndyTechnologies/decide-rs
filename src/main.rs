@@ -47,8 +47,9 @@ fn main() {
 
 fn run(model_path: &str, state: &str) -> anyhow::Result<serde_json::Value> {
     let engine = decide_rs::load_engine(Path::new(model_path))?;
-    let answers = decide_rs::run_decisions(&engine, state, &decide_rs::sample_questions())?;
-    let mut result = decide_rs::answers_json(&answers);
+    let adapter = decide_rs::adapter::Adapter::new_from_engine(engine);
+    let adapted_answers = adapter.run(state, &decide_rs::sample_questions())?;
+    let mut result = adapter.answers_to_json(&adapted_answers);
     result["model"] = serde_json::json!("julia-1");
     result["state"] = serde_json::json!(state);
     Ok(result)
