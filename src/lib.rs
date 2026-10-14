@@ -3,6 +3,7 @@
 //! engine: it is always loaded from a caller-supplied local checkpoint
 //! directory. Networking exists only in the explicit [`checkpoint`] module
 //! (revision-pinned, sha256-verified download; ADR 0001 D1).
+pub mod adapter;
 pub mod checkpoint;
 pub mod schema;
 
