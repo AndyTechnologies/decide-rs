@@ -1,7 +1,8 @@
+#!/usr/bin/env rust
 //! Unit tests for the inference adapter using synthetic `julia1::Answer` values.
 //! No real model weights required — tests exercise pure mapping and arithmetic.
 
-use decide_rs::adapter::{AdaptedAnswer, ChoiceResult, NoulResult, ScoreResult};
+use decide_rs::adapter::{AdaptedAnswer, ChoiceResult, NoulResult, ScoreResult, Adapter};
 use julia1::{Answer, Answers, QType};
 use serde_json::json;
 
@@ -98,6 +99,74 @@ fn score_probabilities_sum_invariant() {
     assert!((sum - 1.0).abs() < 1e-4);
 }
 
+// ---- Confidence tests (formula validation) ----
+
+#[test]
+fn confidence_uniform_distribution() {
+    // For n options, uniform probability = 1/n each -> confidence = 0
+    let probs = vec![0.5, 0.5]; // n=2
+    assert!((Adapter::compute_confidence(&probs) - 0.0).abs() < 1e-6);
+    let probs = vec![1.0/3.0, 1.0/3.0, 1.0/3.0]; // n=3
+    assert!((Adapter::compute_confidence(&probs) - 0.0).abs() < 1e-6);
+    let probs = vec![0.25, 0.25, 0.25, 0.25]; // n=4
+    assert!((Adapter::compute_confidence(&probs) - 0.0).abs() < 1e-6);
+}
+
+#[test]
+fn confidence_degenerate_distribution() {
+    // One option has probability 1.0 -> confidence = 1
+    let probs = vec![1.0, 0.0];
+    assert!((Adapter::compute_confidence(&probs) - 1.0).abs() < 1e-6);
+    let probs = vec![0.0, 1.0, 0.0];
+    assert!((Adapter::compute_confidence(&probs) - 1.0).abs() < 1e-6);
+}
+
+#[test]
+fn confidence_three_choice_example_from_docs() {
+    // From Jev docs: largest probability 0.9 -> confidence 0.85
+    let probs = vec![0.9, 0.05, 0.05];
+    assert!((Adapter::compute_confidence(&probs) - 0.85).abs() < 1e-6);
+    // largest 0.5 -> confidence 0.25
+    let probs = vec![0.5, 0.25, 0.25];
+    assert!((Adapter::compute_confidence(&probs) - 0.25).abs() < 1e-6);
+    // largest 0.34 -> confidence ~0.01
+    let probs = vec![0.34, 0.33, 0.33];
+    assert!((Adapter::compute_confidence(&probs) - 0.01).abs() < 1e-6);
+}
+
+#[test]
+fn confidence_score_example_from_docs() {
+    // Score example: probabilities [0.0, 0.57, 0.43] -> confidence 0.355
+    let probs = vec![0.0, 0.57, 0.43];
+    assert!((Adapter::compute_confidence(&probs) - 0.355).abs() < 1e-6);
+}
+
+#[test]
+fn confidence_choice_result_includes_confidence() {
+    let criterion_ids = vec![("billing".into(), "Payments".into()), ("platform".into(), "Checkout".into())];
+    let answer = Answer {
+        qtype: QType::Choice,
+        keys: vec!["billing".into(), "platform".into()],
+        probabilities: vec![0.2, 0.8],
+    };
+    let adapted = Adapter::evaluate_choice(&answer, &criterion_ids);
+    assert!((adapted.confidence - 0.6).abs() < 1e-6); // (2*0.8 -1)/(2-1) = 0.6
+    assert_eq!(adapted.winner, "platform");
+}
+
+#[test]
+fn confidence_score_result_includes_confidence() {
+    let levels = vec!["Low".into(), "Medium".into(), "High".into()];
+    let answer = Answer {
+        qtype: QType::Score,
+        keys: vec![],
+        probabilities: vec![0.1, 0.7, 0.2],
+    };
+    let adapted = Adapter::evaluate_score(&answer, &levels);
+    // max=0.7, n=3 => (3*0.7 -1)/2 = 0.55
+    assert!((adapted.confidence - 0.55).abs() < 1e-6);
+}
+
 // ---- JSON serialization tests (pure AdaptedAnswer → JSON) ----
 
 fn answers_json(answers: &[(String, AdaptedAnswer)]) -> serde_json::Value {
@@ -118,6 +187,7 @@ fn adapted_to_json(answer: &AdaptedAnswer) -> serde_json::Value {
             out.insert("type".into(), json!("choice"));
             out.insert("probabilities".into(), serde_json::Value::Object(probs));
             out.insert("choice".into(), json!(c.winner));
+            out.insert("confidence".into(), json!(c.confidence));
             out.insert("max_probability".into(), json!(c.probabilities.iter().map(|(_, p)| *p).fold(f64::NEG_INFINITY, f64::max)));
             serde_json::Value::Object(out)
         }
@@ -134,6 +204,7 @@ fn adapted_to_json(answer: &AdaptedAnswer) -> serde_json::Value {
             out.insert("type".into(), json!("score"));
             out.insert("probabilities".into(), serde_json::Value::Object(probs));
             out.insert("score".into(), json!(s.expected_score));
+            out.insert("confidence".into(), json!(s.confidence));
             out.insert("max_probability".into(), json!(s.probabilities.iter().map(|(_, p)| *p).fold(f64::NEG_INFINITY, f64::max)));
             serde_json::Value::Object(out)
         }
@@ -151,6 +222,7 @@ fn choice_json_has_winner_and_probabilities() {
                 ("platform".into(), 0.7),
                 ("account".into(), 0.2),
             ],
+            confidence: 0.55, // (3*0.7 -1)/2 = 0.55
         }),
     )];
     let json = answers_json(results);
@@ -158,6 +230,7 @@ fn choice_json_has_winner_and_probabilities() {
     assert_eq!(route["type"].as_str(), Some("choice"));
     assert_eq!(route["choice"].as_str(), Some("platform"));
     assert!((route["probabilities"]["platform"].as_f64().unwrap() - 0.7).abs() < 1e-6);
+    assert!((route["confidence"].as_f64().unwrap() - 0.55).abs() < 1e-6);
     assert!(route["max_probability"].is_number());
 }
 
@@ -177,13 +250,15 @@ fn score_json_has_expected_score_and_levels() {
         AdaptedAnswer::Score(ScoreResult {
             probabilities: vec![("Calm".into(), 0.1), ("Annoyed".into(), 0.6), ("Angry".into(), 0.3)],
             expected_score: 2.2,
+            confidence: 0.4, // (3*0.6 -1)/2 = 0.4
         }),
     )];
     let json = answers_json(results);
     let frustration = &json["answers"]["frustration"];
     assert_eq!(frustration["type"].as_str(), Some("score"));
     assert!((frustration["score"].as_f64().unwrap() - 2.2).abs() < 1e-6);
-    assert!((frustration["probabilities"]["Calm"].as_f64().unwrap() - 0.1).abs() < 1e-6);
+    assert!((frustration["confidence"].as_f64().unwrap() - 0.4).abs() < 1e-6);
+    assert!((frustration["probabilities"]["Annoyed"].as_f64().unwrap() - 0.6).abs() < 1e-6);
 }
 
 // ---- Integration with synth_answers + pure logic ----

@@ -23,6 +23,7 @@ pub enum AdaptedAnswer {
 pub struct ChoiceResult {
     pub winner: String,
     pub probabilities: Vec<(String, f64)>,
+    pub confidence: f64,
 }
 
 /// Probability of the `"true"` key.
@@ -36,6 +37,7 @@ pub struct NoulResult {
 pub struct ScoreResult {
     pub probabilities: Vec<(String, f64)>,
     pub expected_score: f64,
+    pub confidence: f64,
 }
 
 /// Typed inference adapter wrapping a single [`Engine`] instance.
@@ -52,6 +54,22 @@ impl Adapter {
     /// Create an adapter from an existing engine (takes ownership).
     pub fn new_from_engine(engine: Engine) -> Self {
         Self { engine }
+    }
+
+    /// Compute confidence from a probability vector: (n * max - 1) / (n - 1).
+    /// Returns 0.0 for a uniform distribution, 1.0 for a degenerate distribution.
+    /// For n == 1, returns 1.0 (though Jev requires n >= 2 for choice/score).
+    pub fn compute_confidence(probs: &[f64]) -> f64 {
+        let n = probs.len();
+        if n == 0 {
+            return 0.0;
+        }
+        if n == 1 {
+            return 1.0;
+        }
+        let max = probs.iter().cloned().fold(0.0f64, |a, b| a.max(b));
+        let n_f = n as f64;
+        (n_f * max - 1.0) / (n_f - 1.0)
     }
 
     /// Validate the request and run inference, returning adapted answers.
@@ -74,11 +92,11 @@ impl Adapter {
                 .expect("answer key without matching question");
             let adapted = match &question.1 {
                 Question { qtype: QuestionType::Choice, criteria: Criteria::Choice(criterion_ids), .. } => {
-                    AdaptedAnswer::Choice(self.evaluate_choice(answer, criterion_ids))
+                    AdaptedAnswer::Choice(Adapter::evaluate_choice(answer, criterion_ids))
                 }
                 Question { qtype: QuestionType::Noul, .. } => AdaptedAnswer::Noul(self.evaluate_noul(answer)),
                 Question { qtype: QuestionType::Score, criteria: Criteria::Score(levels), .. } => {
-                    AdaptedAnswer::Score(self.evaluate_score(answer, levels))
+                    AdaptedAnswer::Score(Adapter::evaluate_score(answer, levels))
                 }
                 _ => unreachable!("schema validation should prevent type mismatch"),
             };
@@ -86,7 +104,7 @@ impl Adapter {
         }).collect()
     }
 
-    fn evaluate_choice(&self, answer: &Answer, criterion_ids: &[(String, String)]) -> ChoiceResult {
+    pub fn evaluate_choice(answer: &Answer, criterion_ids: &[(String, String)]) -> ChoiceResult {
         let mut best_idx = 0usize;
         let mut best_prob = answer.probabilities[0];
         for (i, &prob) in answer.probabilities.iter().enumerate().skip(1) {
@@ -109,7 +127,8 @@ impl Adapter {
             (criterion_ids[i].0.clone(), p)
         }).collect();
         let winner = criterion_ids[best_idx].0.clone();
-        ChoiceResult { winner, probabilities }
+        let confidence = Self::compute_confidence(&answer.probabilities);
+        ChoiceResult { winner, probabilities, confidence }
     }
 
     fn evaluate_noul(&self, answer: &Answer) -> NoulResult {
@@ -117,13 +136,14 @@ impl Adapter {
         NoulResult { prob_true: answer.probabilities[true_idx] }
     }
 
-    fn evaluate_score(&self, answer: &Answer, levels: &[String]) -> ScoreResult {
+    pub fn evaluate_score(answer: &Answer, levels: &[String]) -> ScoreResult {
         let probabilities: Vec<(String, f64)> = levels.iter().map(|l| l.clone()).zip(answer.probabilities.iter().copied())
             .collect();
         let expected_score: f64 = answer.probabilities.iter().enumerate()
             .map(|(i, &p)| (i + 1) as f64 * p)
             .sum();
-        ScoreResult { probabilities, expected_score }
+        let confidence = Self::compute_confidence(&answer.probabilities);
+        ScoreResult { probabilities, expected_score, confidence }
     }
 
     /// Serialize adapted answers to JSON (mirrors `julia1::answers_to_json` structure).
