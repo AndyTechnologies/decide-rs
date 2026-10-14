@@ -1,6 +1,10 @@
 //! decide-rs core: a thin wrapper around the `julia1` CPU runtime for the Julia-1
-//! decision model. No networking, no inference servers, no auto-downloads: the
-//! engine is always loaded from a caller-supplied local checkpoint directory.
+//! decision model. No inference servers and no auto-downloads inside the
+//! engine: it is always loaded from a caller-supplied local checkpoint
+//! directory. Networking exists only in the explicit [`checkpoint`] module
+//! (revision-pinned, sha256-verified download; ADR 0001 D1).
+pub mod checkpoint;
+
 use julia1::{Answers, Engine, EngineOptions, State};
 use serde_json::Value;
 use std::path::Path;
