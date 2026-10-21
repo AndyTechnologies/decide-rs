@@ -1,2 +1,5 @@
 /target
 .codegraph/
+julia-checkpoint/
+node_modules/
+dist/
