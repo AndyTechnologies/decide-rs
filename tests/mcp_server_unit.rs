@@ -183,3 +183,99 @@ mod integration {
         assert_eq!(answers[0].0, "frustration");
     }
 }
+#[cfg(test)]
+mod tool_surface {
+    use decide_rs::adapter::Adapter;
+    use decide_rs::mcp::{self, ToolError};
+    use rmcp::model::CallToolResult;
+    use serde_json::{json, Value};
+
+    fn adapter_if_model_available() -> Option<Adapter> {
+        let path = std::path::Path::new("julia-checkpoint");
+        if path.is_dir() {
+            Adapter::new(path).ok()
+        } else {
+            None
+        }
+    }
+
+    const ARGS: &str = r#"{
+        "state": "Ticket #4821: checkout payments failing after release, revenue impact",
+        "questions": {
+            "route": {"type": "choice", "instructions": "Which team?", "criteria": {
+                "billing": "Payments, invoices, refunds",
+                "platform": "Checkout, API and platform outages"
+            }}
+        }
+    }"#;
+
+    #[test]
+    fn unknown_tool_is_rejected_with_its_name() {
+        let err = mcp::prepare_call(
+            "decide/roulette",
+            &serde_json::from_str::<Value>(ARGS).unwrap(),
+        )
+        .unwrap_err();
+        match err {
+            ToolError::UnknownTool(ref name) => assert_eq!(name, "decide/roulette"),
+            other => panic!("expected UnknownTool, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn schema_failures_reference_stable_paths() {
+        let args = json!({
+            "state": "s",
+            "questions": {
+                "route": {"type": "choice", "instructions": "Which team?", "criteria": {
+                    "billing": "Payments", "platform": "Payments"
+                }}
+            }
+        });
+        let err = mcp::prepare_call("decide/choice", &args).unwrap_err();
+        match err {
+            ToolError::Schema(errors) => {
+                assert_eq!(errors.len(), 1, "one criteria violation only");
+                assert_eq!(errors[0].path, "questions.route.criteria");
+                assert!(errors[0].message.contains("duplicate"));
+            }
+            other => panic!("expected Schema error, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn missing_arguments_are_flagged_at_their_path() {
+        let args = json!({"state": "s"});
+        let err = mcp::prepare_call("decide/noul", &args).unwrap_err();
+        match err {
+            ToolError::Schema(errors) => {
+                assert!(errors.iter().any(|e| e.path == "arguments.questions"),
+                    "expected arguments.questions violation, got {errors:?}");
+            }
+            other => panic!("expected Schema error, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn valid_call_returns_answers_with_created_structured_value() {
+        let Some(adapter) = adapter_if_model_available() else {
+            eprintln!("model not present; skipping real-inference assertion");
+            return;
+        };
+        let args: Value = serde_json::from_str(ARGS).unwrap();
+        let answers = mcp::run_tool(&adapter, "decide/choice", &args)
+            .expect("valid call must succeed");
+        let route = &answers["answers"]["route"];
+        assert_eq!(route["type"], "choice");
+        assert!(route["probabilities"].is_object());
+
+        // The binary wraps this exact value in CallToolResult::structured:
+        // text content mirrors structuredContent.
+        let result = rmcp::model::CallToolResult::structured(answers.clone());
+        assert_eq!(result.structured_content.as_ref().unwrap(), &answers);
+        let text = result.content[0].as_text().unwrap().text.clone();
+        assert_eq!(serde_json::from_str::<Value>(&text).unwrap(), answers);
+    }
+
+
+}
