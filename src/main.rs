@@ -3,24 +3,30 @@
 //! `decide-rs fetch <dest-dir>` downloads the revision-pinned checkpoint.
 use std::path::Path;
 
-const USAGE: &str = "usage: decide-rs <model-path> [state-text]\n       decide-rs fetch <dest-dir>";
+const USAGE: &str = "usage: decide-rs <model-path> [state-text]\n       decide-rs fetch [dest-dir] (default: installed model location)";
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     if args.get(1).map(String::as_str) == Some("fetch") {
-        let dest = match (args.get(2), args.len()) {
-            (Some(dest), 3) => dest,
+        match args.len() {
+            2 => {}
+            3 => {}
             _ => {
                 eprintln!("{USAGE}");
                 std::process::exit(2);
             }
+        }
+        let dest: std::path::PathBuf = match args.get(2) {
+            Some(dest) => dest.into(),
+            None => decide_rs::installed_model_path(),
         };
-        if let Err(err) = decide_rs::checkpoint::download(Path::new(dest)) {
+        if let Err(err) = decide_rs::checkpoint::download(&dest) {
             eprintln!("error: {err:#}");
             std::process::exit(1);
         }
         println!(
-            "checkpoint ready at {dest} (revision {})",
+            "checkpoint ready at {} (revision {})",
+            dest.display(),
             decide_rs::checkpoint::REVISION
         );
         return;

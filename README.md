@@ -11,7 +11,10 @@ No Python, ONNX Runtime, Ollama, or inference server is required: everything run
 ## Planned components
 
 - **CLI and decision library** — the inference core, with `choice`, `noul`, and `score` operations compatible in structure and semantics with the public Jev API.
-- **MCP server** — a persistent interface so agents and applications can request evaluations without reloading the model on every call; it reuses the CLI core.
+- **MCP server** — a persistent interface so agents and applications can request evaluations without reloading the model on every call; it reuses the CLI core. The server runs over stdio transport and exposes three tools:
+  - `decide/choice` — categorical choice decisions
+  - `decide/noul` — yes/no (noul) decisions
+  - `decide/score` — score/rubric decisions
 - **pi-decide extension** — a small, independent TypeScript Pi extension that registers the MCP server and adds instructions so the agent evaluates alternatives before posing decision questions to the user when appropriate. It does **not** intercept or modify Gentle Shell question-tool calls; the agent decides when to call the MCP tools and what to do with the result.
 
 ## Objective
@@ -34,6 +37,27 @@ Implementation is incremental: each phase is developed in an independent PR, wit
 
 - **Language:** Rust (edition 2024)
 - **First supported platform:** Linux x86-64
+
+## Running the MCP Server
+
+The MCP server binary is `decide-rs-mcp`. It requires a local Julia-1 checkpoint directory.
+
+```bash
+# Model resolution order: DECIDE_RS_MODEL_PATH, then
+# ~/.local/share/decide-rs/julia-checkpoint, then ./julia-checkpoint
+export DECIDE_RS_MODEL_PATH=/path/to/julia-checkpoint
+
+# Run the server (communicates over stdio)
+decide-rs-mcp
+```
+
+The server loads the model once at startup and serves requests over stdio using the Model Context Protocol (MCP). It exposes three tools:
+
+- `decide/choice` — parameters: `state` (string), `questions` (object with choice-type question)
+- `decide/noul` — parameters: `state` (string), `questions` (object with noul-type question)
+- `decide/score` — parameters: `state` (string), `questions` (object with score-type question)
+
+Each tool returns a JSON result with the decision outcome.
 
 ## License
 

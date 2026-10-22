@@ -83,6 +83,40 @@ pub fn answers_json(answers: &Answers) -> Value {
     julia1::answers_to_json(answers)
 }
 
+/// Default install location for the Julia-1 checkpoint: `$XDG_DATA_HOME/
+/// decide-rs/julia-checkpoint` (typically `~/.local/share/...`). The relative
+/// project-local `julia-checkpoint` directory is a development convenience,
+/// not the installed default.
+pub fn installed_model_path() -> std::path::PathBuf {
+    let data_home = std::env::var("XDG_DATA_HOME")
+        .ok()
+        .filter(|v| !v.trim().is_empty())
+        .map(std::path::PathBuf::from)
+        .or_else(|| {
+            std::env::var("HOME")
+                .ok()
+                .filter(|v| !v.trim().is_empty())
+                .map(|home| std::path::PathBuf::from(home).join(".local/share"))
+        })
+        .unwrap_or_else(|| std::path::PathBuf::from("."));
+    data_home.join("decide-rs/julia-checkpoint")
+}
+
+/// Resolve the model directory for binaries, in priority order:
+/// 1. `DECIDE_RS_MODEL_PATH` (explicit override)
+/// 2. the installed location (see [`installed_model_path`]) when it exists
+/// 3. the relative project-local `julia-checkpoint` (development runs)
+pub fn resolve_model_path() -> std::path::PathBuf {
+    if let Ok(path) = std::env::var("DECIDE_RS_MODEL_PATH") {
+        return std::path::PathBuf::from(path);
+    }
+    let installed = installed_model_path();
+    if installed.is_dir() {
+        return installed;
+    }
+    std::path::PathBuf::from("julia-checkpoint")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
