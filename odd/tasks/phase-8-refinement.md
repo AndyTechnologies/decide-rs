@@ -24,7 +24,7 @@ S4. **8b — Distribución** (`feat/distribution-packaging`): empaquetado `full-
 ## Tareas
 
 - [x] 1. Crear documento de tarea ODD de Fase 8 con split en sub-PRs.
-- [ ] 2. S1 8a: MCP refinado (structuredContent + errores por-path + helper en lib).
+- [x] 2. S1 8a: MCP refinado (structuredContent + errores por-path + helper en lib).
 - [ ] 3. S2 8c: transporte TCP/streamable-HTTP.
 - [ ] 4. S3 8d: CLI enriquecida.
 - [ ] 5. S4 8b: distribución/empaquetado.
@@ -32,3 +32,9 @@ S4. **8b — Distribución** (`feat/distribution-packaging`): empaquetado `full-
 
 ---
 **Nota**: Este documento se actualizará a medida que avance la fase.
+## Log
+
+- L8.1 (S1): PR #10 (commit dc56146, issue #9). Verificado en cable:
+  `structuredContent` espeja el JSON en llamadas válidas; rechazos OK esquema
+  vuelven `-32602` con `data.errors[{path,message}]` (`questions.route.criteria`,
+  `arguments.questions`). Tests 41 pass + 6/6 pesos reales.
