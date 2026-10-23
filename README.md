@@ -53,9 +53,9 @@ pi --extension /path/to/decide-rs/extensions/pi-decide/src/extension.ts
 1. **Registers the MCP server** `decide-rs` with Pi (stdio transport, uses `decide-rs-mcp` binary)
 2. **Adds system prompt guidance** so the agent knows when and how to use the decision tools
 3. **Exposes three tools** in the `mcp__decide_rs` namespace:
-   - `mcp__decide_rs__decide/choice` — categorical choices
-   - `mcp__decide_rs__decide/noul` — yes/no decisions
-   - `mcp__decide_rs__decide/score` — rubric scoring
+   - `mcp__decide_rs__decide_choice` — categorical choices
+   - `mcp__decide_rs__decide_noul` — yes/no decisions
+   - `mcp__decide_rs__decide_score` — rubric scoring
 
 ### Usage in Pi
 
@@ -74,6 +74,27 @@ Based on the situation (checkout payments failing, revenue impact), the model re
 | `DECIDE_RS_MCP_BINARY` | Path to `decide-rs-mcp` binary | `decide-rs-mcp` (from PATH) |
 | `DECIDE_RS_MODEL_PATH` | Path to Julia-1 checkpoint | same resolution as the binary |
 | `DECIDE_RS_PROJECT_ROOT` | Project root (for dev binary) | unset |
+
+## Running the MCP Server
+
+The MCP server binary is `decide-rs-mcp`. It requires a local Julia-1 checkpoint directory.
+
+```bash
+# Model resolution order: DECIDE_RS_MODEL_PATH, then
+# ~/.local/share/decide-rs/julia-checkpoint, then ./julia-checkpoint
+export DECIDE_RS_MODEL_PATH=/path/to/julia-checkpoint
+
+# Run the server (communicates over stdio)
+decide-rs-mcp
+```
+
+The server loads the model once at startup and serves requests using the Model Context Protocol (MCP). Valid calls carry the answers JSON both as text content and `structuredContent`; schema violations return `-32602` with `data.errors[]` of `{path, message}`.
+
+## Tool contract
+
+Tool names follow the MCP pattern recommendation (`decide_choice`, `decide_noul`, `decide_score`, no `/`), and each tool validates that every question it receives matches its own type: mixed-type requests are rejected with `-32602` and a per-question path (`questions.<id>.type`).
+
+`state` accepts a string, object, or array. Objects and arrays are serialized canonically before inference (compact JSON, keys recursively sorted), so equal states always produce equal engine input.
 
 ## License
 

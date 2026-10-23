@@ -111,6 +111,15 @@ fn shape(
 }
 
 impl QuestionType {
+    /// The string literal accepted by the schema for this type.
+    pub fn qtype_name(self) -> &'static str {
+        match self {
+            Self::Choice => "choice",
+            Self::Noul => "noul",
+            Self::Score => "score",
+        }
+    }
+
     fn parse(name: &str) -> Option<Self> {
         match name {
             "choice" => Some(Self::Choice),

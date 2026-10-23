@@ -22,9 +22,9 @@ fn test_tool_schema_structure() {
     ]));
     let schema: Arc<Map<String, Value>> = Arc::new(schema_map);
 
-    let tool = Tool::new("decide/choice", "Run a choice decision", schema);
+    let tool = Tool::new("decide_choice", "Run a choice decision", schema);
 
-    assert_eq!(tool.name.as_ref(), "decide/choice");
+    assert_eq!(tool.name.as_ref(), "decide_choice");
     assert_eq!(tool.description.as_deref(), Some("Run a choice decision"));
     assert!(tool.input_schema.contains_key("type"));
     assert!(tool.input_schema.contains_key("properties"));
@@ -212,12 +212,12 @@ mod tool_surface {
     #[test]
     fn unknown_tool_is_rejected_with_its_name() {
         let err = mcp::prepare_call(
-            "decide/roulette",
+            "decide_roulette",
             &serde_json::from_str::<Value>(ARGS).unwrap(),
         )
         .unwrap_err();
         match err {
-            ToolError::UnknownTool(ref name) => assert_eq!(name, "decide/roulette"),
+            ToolError::UnknownTool(ref name) => assert_eq!(name, "decide_roulette"),
             other => panic!("expected UnknownTool, got {other:?}"),
         }
     }
@@ -232,7 +232,7 @@ mod tool_surface {
                 }}
             }
         });
-        let err = mcp::prepare_call("decide/choice", &args).unwrap_err();
+        let err = mcp::prepare_call("decide_choice", &args).unwrap_err();
         match err {
             ToolError::Schema(errors) => {
                 assert_eq!(errors.len(), 1, "one criteria violation only");
@@ -246,7 +246,7 @@ mod tool_surface {
     #[test]
     fn missing_arguments_are_flagged_at_their_path() {
         let args = json!({"state": "s"});
-        let err = mcp::prepare_call("decide/noul", &args).unwrap_err();
+        let err = mcp::prepare_call("decide_noul", &args).unwrap_err();
         match err {
             ToolError::Schema(errors) => {
                 assert!(errors.iter().any(|e| e.path == "arguments.questions"),
@@ -257,13 +257,51 @@ mod tool_surface {
     }
 
     #[test]
+    fn tool_rejects_mismatched_question_type() {
+        let args = json!({
+            "state": "s",
+            "questions": {
+                "urgent": {"type": "noul", "instructions": "Is this urgent?",
+                    "criteria": {"false": "Routine", "true": "Urgent"}}
+            }
+        });
+        let err = mcp::prepare_call("decide_choice", &args).unwrap_err();
+        match err {
+            ToolError::Schema(errors) => {
+                assert!(errors.iter().any(|e| e.path == "questions.urgent.type"
+                    && e.message.contains("does not match tool decide_choice")),
+                    "expected type-mismatch violation, got {errors:?}");
+            }
+            other => panic!("expected Schema error, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn non_string_state_is_canonically_serialized() {
+        let args = json!({
+            "state": {"summary": "payments failing", "impact": "revenue"},
+            "questions": {
+                "urgent": {"type": "noul", "instructions": "Is this urgent?",
+                    "criteria": {"false": "Routine", "true": "Urgent"}}
+            }
+        });
+        let prepared = mcp::prepare_call("decide_noul", &args)
+            .expect("object state is valid for the tool contract");
+        // Canonical serialization: compact JSON with sorted map keys.
+        assert_eq!(
+            prepared.state_text,
+            r#"{"impact":"revenue","summary":"payments failing"}"#
+        );
+    }
+
+    #[test]
     fn valid_call_returns_answers_with_created_structured_value() {
         let Some(adapter) = adapter_if_model_available() else {
             eprintln!("model not present; skipping real-inference assertion");
             return;
         };
         let args: Value = serde_json::from_str(ARGS).unwrap();
-        let answers = mcp::run_tool(&adapter, "decide/choice", &args)
+        let answers = mcp::run_tool(&adapter, "decide_choice", &args)
             .expect("valid call must succeed");
         let route = &answers["answers"]["route"];
         assert_eq!(route["type"], "choice");

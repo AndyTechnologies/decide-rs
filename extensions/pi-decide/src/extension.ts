@@ -2,7 +2,7 @@
  * pi-decide extension
  *
  * Registers the decide-rs MCP server and adds system instructions so the agent
- * evaluates alternatives with decide/choice, decide/noul, decide/score before
+ * evaluates alternatives with decide_choice, decide_noul, decide_score before
  * posing decision questions to the user.
  *
  * The decide-rs binary must be available in PATH or at a known location.
@@ -24,14 +24,14 @@ const DECIDE_SYSTEM_INSTRUCTION = `
 When the user asks you to make a decision between alternatives, or when you need to evaluate options before proposing a course of action, use the **decide-rs** MCP tools instead of asking the user directly.
 
 Available tools (namespace: \`mcp__decide_rs\`):
-- \`mcp__decide_rs__decide/choice\` — Categorical choice between named options (e.g., which team, which approach, which priority)
-- \`mcp__decide_rs__decide/noul\` — Yes/No decisions (e.g., is this urgent? should we proceed?)
-- \`mcp__decide_rs__decide/score\` — Rubric-based scoring (e.g., frustration level, confidence, risk rating)
+- \`mcp__decide_rs__decide_choice\` — Categorical choice between named options (e.g., which team, which approach, which priority); every question must be type \`choice\`
+- \`mcp__decide_rs__decide_noul\` — Yes/No decisions (e.g., is this urgent? should we proceed?); every question must be type \`noul\`
+- \`mcp__decide_rs__decide_score\` — Rubric-based scoring (e.g., frustration level, confidence, risk rating); every question must be type \`score\`
 
 ### When to use
-- User asks "Should I do X or Y?" → use \`decide/choice\`
-- User asks "Is this urgent/important/ready?" → use \`decide/noul\`
-- User asks "How frustrated/risky/confident is this?" → use \`decide/score\`
+- User asks "Should I do X or Y?" → use \`decide_choice\`
+- User asks "Is this urgent/important/ready?" → use \`decide_noul\`
+- User asks "How frustrated/risky/confident is this?" → use \`decide_score\`
 - Before proposing a decision question to the user, evaluate the alternatives yourself
 
 ### How to call
@@ -44,7 +44,7 @@ Each tool takes:
 
 ### Example
 \`\`\`typescript
-await mcp__decide_rs__decide/choice({
+await mcp__decide_rs__decide_choice({
   state: "Ticket #4821: checkout payments failing after release. Revenue impact.",
   questions: {
     route: {
@@ -60,7 +60,17 @@ await mcp__decide_rs__decide/choice({
 });
 \`\`\`
 
-The tool returns probabilities and a recommended choice. Present the result to the user with the model's reasoning, then ask for confirmation if needed.
+### Interpreting results
+
+The tool returns a classifier prediction: probabilities per option, the
+highest-probability option, and the expected score for rubrics. That is all
+Julia-1 produces - it emits **no rationale text**.
+
+When reporting to the user:
+- Say "the classifier predicts X with probability P", not "the model thinks X because ...".
+- Your own reasoning about the criteria belongs to you, the agent - keep the two clearly separate.
+- Probabilities are calibration hints, not guarantees of correctness; for consequential decisions say so explicitly and invite verification of the context before acting.
+- Mixed-type requests are rejected; one tool call per decision type.
 `.trim();
 
 /** Determine the path to the decide-rs-mcp binary. */
