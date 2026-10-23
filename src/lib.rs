@@ -5,6 +5,7 @@
 //! (revision-pinned, sha256-verified download; ADR 0001 D1).
 pub mod adapter;
 pub mod checkpoint;
+pub mod mcp;
 pub mod schema;
 
 use julia1::{Answers, Engine, EngineOptions, State};
