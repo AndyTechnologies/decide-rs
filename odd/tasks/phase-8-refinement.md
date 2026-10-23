@@ -7,13 +7,14 @@
 
 ## Sub-fases (orden de implementación)
 
-S1. **8a — MCP refinado** (`feat/mcp-structured-output`):
-    - `structuredContent` en las respuestas de `tools/call` (además del text content).
-    - Errores de esquema como `INVALID_PARAMS` con `data.errors` por-path (hoy todo cae en `internal_error`).
-    - Lógica del tool extraída a `decide_rs::mcp` (lib), testeable por integration tests sin bins.
-S2. **8c — Transporte TCP/streamable-HTTP** (`feat/mcp-tcp-transport`).
-S3. **8d — CLI enriquecida** (`feat/cli-enriched`): preguntas desde archivo JSON, salida enriquecida, alias por proyecto.
-S4. **8b — Distribución** (`feat/distribution-packaging`): empaquetado `full-offline`/`standard`, extensión para `pi install`.
+S1. **8a — MCP refinado** (`feat/mcp-structured-output`): MERGEADA (PR #10).
+S2. **8c — Transporte TCP** (`feat/mcp-tcp-transport`): implementado y PARACADO por decisión del usuario; no se mergea para el MVP (revisión Astra-6.1 lo ubica después del MVP).
+S3. **8d — Contrato de herramientas + CLI enriquecida** (dos PRs):
+    S3a `feat/mcp-contract-tooltypes`: renombrar tools (sin `/`) + especialización por tipo de pregunta + serialización canónica de `state` (3 tipos) + corrección de instrucciones de extensión (clasificador ≠ razonamiento del agente).
+    S3b `feat/cli-enriched`: subcomandos, entrada JSON por archivo/stdin, `--model`, `--help`, códigos de salida, JSONL.
+S4. **8e — Endurecimiento del núcleo** (`feat/adapter-typed-errors`): error tipado en adapter (sin panic/zip truncado), `answers_to_json` sin instancia (tests sin pesos siempre aserciones), reparación de descargas corruptas.
+S5. **8f — CI** (`feat/ci-workflow`): fmt/clippy/test + build extensión TS en cada PR.
+S6. **8b — Distribución** (`feat/distribution-packaging`): posterior al MVP; incluye definir licencia.
 
 ## Specs
 
@@ -38,3 +39,13 @@ S4. **8b — Distribución** (`feat/distribution-packaging`): empaquetado `full-
   `structuredContent` espeja el JSON en llamadas válidas; rechazos OK esquema
   vuelven `-32602` con `data.errors[{path,message}]` (`questions.route.criteria`,
   `arguments.questions`). Tests 41 pass + 6/6 pesos reales.
+
+- L8.2 (S3a, 2026-10-23): decisiones del usuario tras la revisión de Astra-6.1:
+  1) renombrar tools de MCP quitando `/` (decide_choice/noul/score) Y especializar
+     cada tool a su tipo de pregunta (rechazo por-path de mezclas);
+  2) contrato de `state`: mantener los 3 tipos con serialización canónica
+     (JSON compacto con claves recursivamente ordenadas) definida en el núcleo.
+  Verificación por cable: mezcla rechazada en `questions.<id>.type`; nombre viejo
+  devuelve unknown tool; objeto de estado canónico entra al motor.
+  Corrección adicional de honestidad (AGENTS.md): las instrucciones de Pi ya no
+  atribuyen razonamiento a Julia-1 (predicción del clasificador vs interpretación del agente).
