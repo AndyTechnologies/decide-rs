@@ -8,8 +8,21 @@ use serde_json::Value;
 use crate::adapter::Adapter;
 use crate::schema::SchemaError;
 
-/// Tool names exposed by the MCP server, in listing order.
-pub const TOOL_NAMES: &[&str] = &["decide/choice", "decide/noul", "decide/score"];
+/// Tool names exposed by the MCP server, in listing order. Names follow the
+/// MCP pattern recommendation (`a-z0-9`, `_`, `-`, `.`), so interoperable
+/// clients can rely on them; each tool only accepts questions of its type.
+pub const TOOL_NAMES: &[&str] = &["decide_choice", "decide_noul", "decide_score"];
+
+/// The question type each tool accepts: `decide_choice` only accepts
+/// `choice` questions, `decide_noul` only `noul`, `decide_score` only `score.
+pub fn tool_question_type(name: &str) -> Option<&'static str> {
+    match name {
+        "decide_choice" => Some("choice"),
+        "decide_noul" => Some("noul"),
+        "decide_score" => Some("score"),
+        _ => None,
+    }
+}
 
 /// Why a `tools/call` failed, before any rmcp mapping.
 #[derive(Debug)]
@@ -50,12 +63,55 @@ fn shared_input_schema() -> Value {
     })
 }
 
+/// Determine the engine-facing text for a validated state. The schema accepts
+/// string, object or array states; objects and arrays serialize canonically
+/// (compact, map keys recursively sorted) before the engine sees a string.
+pub fn canonical_state_text(state: &crate::schema::RequestState) -> String {
+    match state {
+        crate::schema::RequestState::Text(text) => text.clone(),
+        crate::schema::RequestState::Json(value) => canonical_json_string(value),
+    }
+}
+
+/// Compact JSON with object keys recursively sorted, so equal states always
+/// serialize to equal text regardless of input key order.
+fn canonical_json_string(value: &Value) -> String {
+    match value {
+        Value::Object(map) => {
+            let mut keys: Vec<&String> = map.keys().collect();
+            keys.sort();
+            let inner: Vec<String> = keys
+                .iter()
+                .map(|key| format!("{}:{}", serde_json::to_string(key).expect("key"), canonical_json_string(&map[*key])))
+                .collect();
+            format!("{{{}}}", inner.join(","))
+        }
+        Value::Array(items) => {
+            let inner: Vec<String> = items.iter().map(canonical_json_string).collect();
+            format!("[{}]", inner.join(","))
+        }
+        other => serde_json::to_string(other).expect("serializing a Value never fails"),
+    }
+}
+
 /// Wire-neutral tool definitions: (name, description, input schema).
 pub fn tool_specs() -> Vec<(&'static str, &'static str, Value)> {
     vec![
-        ("decide/choice", "Run a categorical choice decision between named criteria (returns probabilities and the recommended option)", shared_input_schema()),
-        ("decide/noul", "Run a yes/no (noul) decision; returns the probability of the \"true\" label", shared_input_schema()),
-        ("decide/score", "Run a rubric score decision over ordered levels; returns level probabilities and the expected score", shared_input_schema()),
+        (
+            "decide_choice",
+            "Run a categorical choice decision between named criteria (returns probabilities and the recommended option); questions must all be type choice",
+            shared_input_schema(),
+        ),
+        (
+            "decide_noul",
+            "Run a yes/no (noul) decision; returns the probability of the \"true\" label; questions must all be type noul",
+            shared_input_schema(),
+        ),
+        (
+            "decide_score",
+            "Run a rubric score decision over ordered levels; returns level probabilities and the expected score; questions must all be type score",
+            shared_input_schema(),
+        ),
     ]
 }
 
@@ -93,13 +149,29 @@ pub fn prepare_call(name: &str, args: &Value) -> Result<PreparedCall, ToolError>
     // Full typed schema validation BEFORE inference (schema errors carry paths).
     let request = crate::schema::parse_request(state, questions)
         .map_err(ToolError::Schema)?;
-    let _ = request;
-    let state_text: String = state
-        .as_str()
-        .map(str::to_owned)
-        .unwrap_or_else(|| state.to_string());
+    // Tool specialization: every question must match the tool's own type.
+    let expected = tool_question_type(name).expect("name already validated");
+    let mismatched: Vec<_> = request
+        .questions
+        .iter()
+        .filter(|(_, q)| q.qtype.qtype_name() != expected)
+        .collect();
+    if !mismatched.is_empty() {
+        return Err(ToolError::Schema(
+            mismatched
+                .iter()
+                .map(|(qid, q)| SchemaError {
+                    path: format!("questions.{qid}.type"),
+                    message: format!(
+                        "question type {} does not match tool {name} (expected {expected})",
+                        q.qtype.qtype_name()
+                    ),
+                })
+                .collect(),
+        ));
+    }
     Ok(PreparedCall {
-        state_text,
+        state_text: canonical_state_text(&request.state),
         questions: questions.clone(),
     })
 }
