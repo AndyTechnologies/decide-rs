@@ -115,13 +115,16 @@ pub fn tool_specs() -> Vec<(&'static str, &'static str, Value)> {
     ]
 }
 
-/// A validated tool call, ready for inference.
+/// A validated request, ready for inference.
 #[derive(Debug, Clone, PartialEq)]
 pub struct PreparedCall {
-    /// State text ready for the engine (non-string states are serialized).
+    /// State text ready for the engine (non-string states are serialized
+    /// canonically; see [`canonical_state_text`]).
     pub state_text: String,
     /// Validated questions map.
     pub questions: Value,
+    /// Per-question type (`question id` -> `choice|noul|score`), in order.
+    pub question_types: Vec<(String, &'static str)>,
 }
 
 /// Validate one tool call without touching the engine: name membership plus
@@ -130,10 +133,31 @@ pub fn prepare_call(name: &str, args: &Value) -> Result<PreparedCall, ToolError>
     if !TOOL_NAMES.contains(&name) {
         return Err(ToolError::UnknownTool(name.to_owned()));
     }
-    let args = args.as_object().ok_or_else(|| ToolError::Schema(vec![SchemaError {
-        path: "arguments".into(),
-        message: "arguments must be an object".into(),
-    }]))?;
+    let expected = tool_question_type(name).expect("name is a known tool");
+    let prepared = parse_arguments(args)?;
+    for (qid, actual) in &prepared.question_types {
+        if *actual != expected {
+            return Err(ToolError::Schema(vec![SchemaError {
+                path: format!("questions.{qid}.type"),
+                message: format!(
+                    "question type {actual} does not match tool {name} (expected {expected})"
+                ),
+            }]));
+        }
+    }
+    Ok(prepared)
+}
+
+/// Validate a mixed-type request (the generic `run` surface): same argument
+/// shape, full typed schema validation and canonical state, without a tool
+/// type constraint.
+pub fn parse_arguments(args: &Value) -> Result<PreparedCall, ToolError> {
+    let args = args
+        .as_object()
+        .ok_or_else(|| ToolError::Schema(vec![SchemaError {
+            path: "arguments".into(),
+            message: "arguments must be an object".into(),
+        }]))?;
     let Some(state) = args.get("state") else {
         return Err(ToolError::Schema(vec![SchemaError {
             path: "arguments.state".into(),
@@ -149,30 +173,14 @@ pub fn prepare_call(name: &str, args: &Value) -> Result<PreparedCall, ToolError>
     // Full typed schema validation BEFORE inference (schema errors carry paths).
     let request = crate::schema::parse_request(state, questions)
         .map_err(ToolError::Schema)?;
-    // Tool specialization: every question must match the tool's own type.
-    let expected = tool_question_type(name).expect("name already validated");
-    let mismatched: Vec<_> = request
-        .questions
-        .iter()
-        .filter(|(_, q)| q.qtype.qtype_name() != expected)
-        .collect();
-    if !mismatched.is_empty() {
-        return Err(ToolError::Schema(
-            mismatched
-                .iter()
-                .map(|(qid, q)| SchemaError {
-                    path: format!("questions.{qid}.type"),
-                    message: format!(
-                        "question type {} does not match tool {name} (expected {expected})",
-                        q.qtype.qtype_name()
-                    ),
-                })
-                .collect(),
-        ));
-    }
     Ok(PreparedCall {
         state_text: canonical_state_text(&request.state),
         questions: questions.clone(),
+        question_types: request
+            .questions
+            .iter()
+            .map(|(qid, q)| (qid.clone(), q.qtype.qtype_name()))
+            .collect(),
     })
 }
 
