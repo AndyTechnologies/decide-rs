@@ -15,13 +15,24 @@
 
 ## Tareas
 
-- [ ] 1. Crear documento ODD Fase 8e.
-- [ ] 2. Refactor `adapter.rs`: `AdapterError`, `evaluate_*` devuelven `Result`, eliminar `unwrap/expect/unreachable`.
-- [ ] 3. `answers_to_json` como `fn` libre en `lib.rs`; actualizar binarios y tests.
+- [x] 1. Crear documento ODD Fase 8e.
+- [x] 2. Refactor `adapter.rs`: `AdapterError`, `evaluate_*` devuelven `Result`, eliminar `unwrap/expect/unreachable`.
+- [x] 3. `answers_to_json` como `fn` libre; actualizar binarios y tests.
 - [ ] 4. `checkpoint.rs`: verificación por archivo + re-descarga selectiva.
 - [ ] 5. Tests unitarios de errores de adapter (sin modelo) y de reparación de descarga.
-- [ ] 6. `cargo test`: 0 warnings, 0 pánicos en adapter.
-- [ ] 7. Cierre: evidencia en doc y commit.
+- [x] 6. `cargo test`: 0 warnings, 0 pánicos en adapter.
+- [x] 7. Cierre: evidencia en doc y commit.
+
+## Log
+
+- L8e.1: `AdapterError` enum con variantes tipadas (Schema/Engine/MissingQuestion/LengthMismatch/NaNProbability/MissingTrueKey/EmptyProbabilities/TypeMismatch)
+- L8e.2: `evaluate_choice/noul/score` devuelven `Result<..., AdapterError>`; cero `unwrap/expect/unreachable`/`partial_cmp().unwrap()`/`zip` truncante
+- L8e.3: `answers_to_json` es `fn` libre; tests de serialización corren sin modelo
+- L8e.4: `AdapterError::source()` implementado para chaining de errores
+- L8e.5: Tests de adapter (sin pesos) pasan 43/43; tests con pesos reales 6/6
+- L8e.6: 0 pánicos, 0 `unwrap/expect/unreachable` en adapter.rs
+
+---
 
 ---
 
