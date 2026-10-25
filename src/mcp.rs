@@ -35,6 +35,59 @@ pub enum ToolError {
     Engine(anyhow::Error),
 }
 
+/// Errors originating from the adapter layer (typed, no panics).
+#[derive(Debug)]
+pub enum AdapterError {
+    Schema(Vec<SchemaError>),
+    Engine(anyhow::Error),
+    EngineLoad(anyhow::Error),
+    MissingQuestion(String),
+    TypeMismatch,
+    EmptyProbabilities,
+    LengthMismatch { expected: usize, got: usize },
+    NaNProbability,
+    MissingTrueKey,
+}
+
+impl std::fmt::Display for AdapterError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            AdapterError::Schema(errors) => {
+                let details: Vec<String> = errors
+                    .iter()
+                    .map(|e| format!("  {}: {}", e.path, e.message))
+                    .collect();
+                write!(f, "schema validation failed:\n{}", details.join("\n"))
+            }
+            AdapterError::Engine(err) => write!(f, "engine inference failed: {err}"),
+            AdapterError::EngineLoad(err) => write!(f, "engine load failed: {err}"),
+            AdapterError::MissingQuestion(qid) => write!(f, "question not found in request: {qid}"),
+            AdapterError::TypeMismatch => write!(f, "type mismatch between tool and question"),
+            AdapterError::EmptyProbabilities => write!(f, "probabilities vector is empty"),
+            AdapterError::LengthMismatch { expected, got } =>
+                write!(f, "length mismatch: expected {expected}, got {got}"),
+            AdapterError::NaNProbability => write!(f, "NaN encountered in probability vector"),
+            AdapterError::MissingTrueKey => write!(f, "required 'true' key missing in noul answer"),
+        }
+    }
+}
+
+impl std::error::Error for AdapterError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            AdapterError::Engine(err) => Some(err.as_ref() as &(dyn std::error::Error + 'static)),
+            AdapterError::EngineLoad(err) => Some(err.as_ref() as &(dyn std::error::Error + 'static)),
+            _ => None,
+        }
+    }
+}
+
+impl From<anyhow::Error> for AdapterError {
+    fn from(err: anyhow::Error) -> Self {
+        AdapterError::Engine(err)
+    }
+}
+
 impl std::fmt::Display for ToolError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -191,6 +244,6 @@ pub fn run_tool(adapter: &Adapter, name: &str, args: &Value) -> Result<Value, To
     let prepared = prepare_call(name, args)?;
     let answers = adapter
         .run(&prepared.state_text, &prepared.questions)
-        .map_err(ToolError::Engine)?;
+        .map_err(|e| ToolError::Engine(e.into()))?;
     Ok(adapter.answers_to_json(&answers))
 }
