@@ -4,6 +4,7 @@
 /// raw softmax answers into typed [`AdaptedAnswer`] variants that carry the
 /// caller's criterion IDs or rubric levels alongside the probabilities.
 use crate::{load_engine, run_decisions};
+use crate::mcp::AdapterError;
 use std::cmp::Ordering;
 use julia1::{Answer, Answers, Engine};
 use crate::schema::{Criteria, Question, QuestionType, Request};
@@ -47,8 +48,10 @@ pub struct Adapter {
 
 impl Adapter {
     /// Load the engine from `model_path` (cached once per Adapter lifetime).
-    pub fn new(model_path: &Path) -> anyhow::Result<Self> {
-        Ok(Self { engine: load_engine(model_path)? })
+    pub fn new(model_path: &Path) -> Result<Self, AdapterError> {
+        load_engine(model_path)
+            .map(|engine| Self { engine })
+            .map_err(AdapterError::EngineLoad)
     }
 
     /// Create an adapter from an existing engine (takes ownership).
@@ -67,120 +70,164 @@ impl Adapter {
         if n == 1 {
             return 1.0;
         }
-        let max = probs.iter().cloned().fold(0.0f64, |a, b| a.max(b));
+        let max = probs.iter().copied().fold(f64::NEG_INFINITY, f64::max);
         let n_f = n as f64;
         (n_f * max - 1.0) / (n_f - 1.0)
     }
 
     /// Validate the request and run inference, returning adapted answers.
-    pub fn run(&self, state: &str, questions: &Value) -> anyhow::Result<Vec<(String, AdaptedAnswer)>> {
-        let request = crate::schema::parse_request(&Value::String(state.to_owned()), questions).map_err(|errors| {
-            let details: Vec<String> = errors.iter()
-                .map(|e| format!("  {}: {}", e.path, e.message))
-                .collect();
-            anyhow::anyhow!("request rejected before inference:\n{}", details.join("\n"))
-        })?;
-        let answers = run_decisions(&self.engine, state, questions)?;
-        Ok(self.evaluate(&request, &answers))
+    pub fn run(&self, state: &str, questions: &serde_json::Value) -> Result<Vec<(String, AdaptedAnswer)>, AdapterError> {
+        let request = crate::schema::parse_request(&serde_json::Value::String(state.to_owned()), questions)
+            .map_err(AdapterError::Schema)?;
+        let answers = crate::run_decisions(&self.engine, state, questions)
+            .map_err(AdapterError::Engine)?;
+        self.evaluate(&request, &answers)
     }
 
     /// Translate raw [`Answers`] into typed [`AdaptedAnswer`]s using schema context.
-    pub fn evaluate(&self, request: &Request, answers: &Answers) -> Vec<(String, AdaptedAnswer)> {
-        answers.iter().map(|(qid, answer)| {
+    pub fn evaluate(&self, request: &crate::schema::Request, answers: &Answers) -> Result<Vec<(String, AdaptedAnswer)>, AdapterError> {
+        let mut results = Vec::with_capacity(answers.len());
+        for (qid, answer) in answers.iter() {
             let question = request.questions.iter()
                 .find(|(id, _)| id == qid)
-                .expect("answer key without matching question");
+                .ok_or_else(|| AdapterError::MissingQuestion(qid.clone()))?;
             let adapted = match &question.1 {
-                Question { qtype: QuestionType::Choice, criteria: Criteria::Choice(criterion_ids), .. } => {
-                    AdaptedAnswer::Choice(Adapter::evaluate_choice(answer, criterion_ids))
-                }
-                Question { qtype: QuestionType::Noul, .. } => AdaptedAnswer::Noul(self.evaluate_noul(answer)),
-                Question { qtype: QuestionType::Score, criteria: Criteria::Score(levels), .. } => {
-                    AdaptedAnswer::Score(Adapter::evaluate_score(answer, levels))
-                }
-                _ => unreachable!("schema validation should prevent type mismatch"),
+                _q @ crate::schema::Question {
+                    qtype: crate::schema::QuestionType::Choice,
+                    criteria: crate::schema::Criteria::Choice(criterion_ids),
+                    ..
+                } => AdaptedAnswer::Choice(Self::evaluate_choice(answer, criterion_ids)?),
+                crate::schema::Question {
+                    qtype: crate::schema::QuestionType::Noul,
+                    ..
+                } => AdaptedAnswer::Noul(Self::evaluate_noul(answer)?),
+                _q @ crate::schema::Question {
+                    qtype: crate::schema::QuestionType::Score,
+                    criteria: crate::schema::Criteria::Score(levels),
+                    ..
+                } => AdaptedAnswer::Score(Self::evaluate_score(answer, levels)?),
+                _ => return Err(AdapterError::TypeMismatch),
             };
-            (qid.clone(), adapted)
-        }).collect()
+            results.push((qid.clone(), adapted));
+        }
+        Ok(results)
     }
 
-    pub fn evaluate_choice(answer: &Answer, criterion_ids: &[(String, String)]) -> ChoiceResult {
+    pub fn evaluate_choice(answer: &Answer, criterion_ids: &[(String, String)]) -> Result<ChoiceResult, AdapterError> {
+        if answer.probabilities.is_empty() {
+            return Err(AdapterError::EmptyProbabilities);
+        }
+        if criterion_ids.len() != answer.probabilities.len() {
+            return Err(AdapterError::LengthMismatch {
+                expected: criterion_ids.len(),
+                got: answer.probabilities.len(),
+            });
+        }
+
         let mut best_idx = 0usize;
         let mut best_prob = answer.probabilities[0];
         for (i, &prob) in answer.probabilities.iter().enumerate().skip(1) {
-            match prob.partial_cmp(&best_prob).unwrap() {
-                Ordering::Greater => {
+            match prob.partial_cmp(&best_prob) {
+                Some(Ordering::Greater) => {
                     best_idx = i;
                     best_prob = prob;
                 }
-                Ordering::Equal => {
-                    // tie: choose lower index (i.e., keep best_idx if it's lower)
+                Some(Ordering::Equal) => {
                     if i < best_idx {
                         best_idx = i;
                         best_prob = prob;
                     }
                 }
-                Ordering::Less => {}
+                Some(Ordering::Less) => {}
+                None => return Err(AdapterError::NaNProbability),
             }
         }
-        let probabilities: Vec<(String, f64)> = answer.probabilities.iter().enumerate().map(|(i, &p)| {
-            (criterion_ids[i].0.clone(), p)
-        }).collect();
+        let probabilities: Vec<(String, f64)> = answer.probabilities.iter().enumerate()
+            .map(|(i, &p)| (criterion_ids[i].0.clone(), p))
+            .collect();
         let winner = criterion_ids[best_idx].0.clone();
         let confidence = Self::compute_confidence(&answer.probabilities);
-        ChoiceResult { winner, probabilities, confidence }
+        Ok(ChoiceResult { winner, probabilities, confidence })
     }
 
-    fn evaluate_noul(&self, answer: &Answer) -> NoulResult {
-        let true_idx = answer.keys.iter().position(|k| k == "true").unwrap_or(1);
-        NoulResult { prob_true: answer.probabilities[true_idx] }
+    fn evaluate_noul(answer: &Answer) -> Result<NoulResult, AdapterError> {
+        let true_idx = answer.keys.iter().position(|k| k == "true")
+            .ok_or(AdapterError::MissingTrueKey)?;
+        let prob_true = answer.probabilities.get(true_idx)
+            .copied()
+            .ok_or(AdapterError::EmptyProbabilities)?;
+        Ok(NoulResult { prob_true })
     }
 
-    pub fn evaluate_score(answer: &Answer, levels: &[String]) -> ScoreResult {
-        let probabilities: Vec<(String, f64)> = levels.iter().map(|l| l.clone()).zip(answer.probabilities.iter().copied())
+    pub fn evaluate_score(answer: &Answer, levels: &[String]) -> Result<ScoreResult, AdapterError> {
+        if answer.probabilities.is_empty() {
+            return Err(AdapterError::EmptyProbabilities);
+        }
+        if levels.len() != answer.probabilities.len() {
+            return Err(AdapterError::LengthMismatch {
+                expected: levels.len(),
+                got: answer.probabilities.len(),
+            });
+        }
+        let probabilities: Vec<(String, f64)> = levels.iter().map(|l| l.clone())
+            .zip(answer.probabilities.iter().copied())
             .collect();
         let expected_score: f64 = answer.probabilities.iter().enumerate()
             .map(|(i, &p)| (i + 1) as f64 * p)
             .sum();
         let confidence = Self::compute_confidence(&answer.probabilities);
-        ScoreResult { probabilities, expected_score, confidence }
+        Ok(ScoreResult { probabilities, expected_score, confidence })
     }
 
     /// Serialize adapted answers to JSON (mirrors `julia1::answers_to_json` structure).
-    pub fn answers_to_json(&self, answers: &[(String, AdaptedAnswer)]) -> Value {
-        let mut map = Map::new();
-        for (qid, adapted) in answers {
-            map.insert(qid.clone(), json!(adapted_to_json(adapted)));
-        }
-        json!({ "answers": map })
+    pub fn answers_to_json(&self, answers: &[(String, AdaptedAnswer)]) -> serde_json::Value {
+        answers_to_json(answers)
     }
 }
 
-fn adapted_to_json(answer: &AdaptedAnswer) -> Value {
+/// Free function for JSON serialization — does not require an `Adapter` instance,
+/// so unit tests can run without a model checkpoint.
+pub fn answers_to_json(answers: &[(String, AdaptedAnswer)]) -> serde_json::Value {
+    let mut map = serde_json::Map::new();
+    for (qid, adapted) in answers {
+        map.insert(qid.clone(), adapted_to_json(adapted));
+    }
+    serde_json::json!({ "answers": map })
+}
+
+fn adapted_to_json(answer: &AdaptedAnswer) -> serde_json::Value {
     match answer {
         AdaptedAnswer::Choice(c) => {
-            let probs: Map<String, Value> = c.probabilities.iter().map(|(k, p)| (k.clone(), json!(p))).collect();
-            let mut out = Map::new();
-            out.insert("type".into(), json!("choice"));
-            out.insert("probabilities".into(), Value::Object(probs));
-            out.insert("choice".into(), json!(c.winner));
-            out.insert("max_probability".into(), json!(c.probabilities.iter().map(|(_, p)| *p).fold(f64::NEG_INFINITY, f64::max)));
-            Value::Object(out)
+            let probs: serde_json::Map<String, serde_json::Value> = c.probabilities.iter()
+                .map(|(k, p)| (k.clone(), serde_json::json!(p)))
+                .collect();
+            let mut out = serde_json::Map::new();
+            out.insert("type".into(), serde_json::json!("choice"));
+            out.insert("probabilities".into(), serde_json::Value::Object(probs));
+            out.insert("choice".into(), serde_json::json!(c.winner));
+            out.insert("max_probability".into(), serde_json::json!(
+                c.probabilities.iter().map(|(_, p)| *p).fold(f64::NEG_INFINITY, f64::max)
+            ));
+            serde_json::Value::Object(out)
         }
         AdaptedAnswer::Noul(n) => {
-            let mut out = Map::new();
-            out.insert("type".into(), json!("noul"));
-            out.insert("noul".into(), json!(n.prob_true));
-            Value::Object(out)
+            let mut out = serde_json::Map::new();
+            out.insert("type".into(), serde_json::json!("noul"));
+            out.insert("noul".into(), serde_json::json!(n.prob_true));
+            serde_json::Value::Object(out)
         }
         AdaptedAnswer::Score(s) => {
-            let probs: Map<String, Value> = s.probabilities.iter().map(|(k, p)| (k.clone(), json!(p))).collect();
-            let mut out = Map::new();
-            out.insert("type".into(), json!("score"));
-            out.insert("probabilities".into(), Value::Object(probs));
-            out.insert("score".into(), json!(s.expected_score));
-            out.insert("max_probability".into(), json!(s.probabilities.iter().map(|(_, p)| *p).fold(f64::NEG_INFINITY, f64::max)));
-            Value::Object(out)
+            let probs: serde_json::Map<String, serde_json::Value> = s.probabilities.iter()
+                .map(|(k, p)| (k.clone(), serde_json::json!(p)))
+                .collect();
+            let mut out = serde_json::Map::new();
+            out.insert("type".into(), serde_json::json!("score"));
+            out.insert("probabilities".into(), serde_json::Value::Object(probs));
+            out.insert("score".into(), serde_json::json!(s.expected_score));
+            out.insert("max_probability".into(), serde_json::json!(
+                s.probabilities.iter().map(|(_, p)| *p).fold(f64::NEG_INFINITY, f64::max)
+            ));
+            serde_json::Value::Object(out)
         }
     }
 }

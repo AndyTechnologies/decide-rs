@@ -149,7 +149,7 @@ fn confidence_choice_result_includes_confidence() {
         keys: vec!["billing".into(), "platform".into()],
         probabilities: vec![0.2, 0.8],
     };
-    let adapted = Adapter::evaluate_choice(&answer, &criterion_ids);
+    let adapted = Adapter::evaluate_choice(&answer, &criterion_ids).unwrap();
     assert!((adapted.confidence - 0.6).abs() < 1e-6); // (2*0.8 -1)/(2-1) = 0.6
     assert_eq!(adapted.winner, "platform");
 }
@@ -162,7 +162,7 @@ fn confidence_score_result_includes_confidence() {
         keys: vec![],
         probabilities: vec![0.1, 0.7, 0.2],
     };
-    let adapted = Adapter::evaluate_score(&answer, &levels);
+    let adapted = Adapter::evaluate_score(&answer, &levels).unwrap();
     // max=0.7, n=3 => (3*0.7 -1)/2 = 0.55
     assert!((adapted.confidence - 0.55).abs() < 1e-6);
 }

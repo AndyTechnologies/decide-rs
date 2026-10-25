@@ -10,8 +10,8 @@
 S1. **8a — MCP refinado** (`feat/mcp-structured-output`): MERGEADA (PR #10).
 S2. **8c — Transporte TCP** (`feat/mcp-tcp-transport`): implementado y PARACADO por decisión del usuario; no se mergea para el MVP (revisión Astra-6.1 lo ubica después del MVP).
 S3. **8d — Contrato de herramientas + CLI enriquecida** (dos PRs):
-    S3a `feat/mcp-contract-tooltypes`: renombrar tools (sin `/`) + especialización por tipo de pregunta + serialización canónica de `state` (3 tipos) + corrección de instrucciones de extensión (clasificador ≠ razonamiento del agente).
-    S3b `feat/cli-enriched`: subcomandos, entrada JSON por archivo/stdin, `--model`, `--help`, códigos de salida, JSONL.
+    S3a `feat/mcp-contract-tooltypes` (PR #12): renombrar tools (sin `/`) + especialización por tipo de pregunta + serialización canónica de `state` (3 tipos) + corrección de instrucciones de extensión (clasificador ≠ razonamiento del agente). **MERGEADA (PR #12)**.
+    S3b `feat/cli-enriched` (PR #14): subcomandos, entrada JSON por archivo/stdin, `--model`, `--help`, códigos de salida, JSONL, `--lenient`. **MERGEADA (PR #14)**.
 S4. **8e — Endurecimiento del núcleo** (`feat/adapter-typed-errors`): error tipado en adapter (sin panic/zip truncado), `answers_to_json` sin instancia (tests sin pesos siempre aserciones), reparación de descargas corruptas.
 S5. **8f — CI** (`feat/ci-workflow`): fmt/clippy/test + build extensión TS en cada PR.
 S6. **8b — Distribución** (`feat/distribution-packaging`): posterior al MVP; incluye definir licencia.
@@ -49,3 +49,17 @@ S6. **8b — Distribución** (`feat/distribution-packaging`): posterior al MVP; 
   devuelve unknown tool; objeto de estado canónico entra al motor.
   Corrección adicional de honestidad (AGENTS.md): las instrucciones de Pi ya no
   atribuyen razonamiento a Julia-1 (predicción del clasificador vs interpretación del agente).
+
+
+## Log
+
+- L8.3 (S3a): PR #12 (commit 4d89701, issue #11). Contract decisions applied:
+  tools renamed (decide_choice/noul/score), per-type validation, canonical state
+  serialization, extension honesty fix. Verified: mixed requests rejected per-path,
+  legacy names rejected, canonical state serialized correctly.
+- L8.4 (S3b): PR #14 (commit b0dea3a, issue #13). CLI enriched:
+  choice|noul|score|run|demo|fetch subcommands; JSON/JSONL input from file/stdin;
+  --model, --lenient, --pretty, --help/--version; exit codes 0/1/2/3.
+  Verified: single request from stdin, mixed-type JSONL batch, lenient mode
+  skips invalid lines, fetch downloads to standard location. All 43 unit + 6/6
+  real-weights tests pass.
