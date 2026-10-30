@@ -2,45 +2,56 @@
 //! Unit tests for the inference adapter using synthetic `julia1::Answer` values.
 //! No real model weights required — tests exercise pure mapping and arithmetic.
 
-use decide_rs::adapter::{AdaptedAnswer, ChoiceResult, NoulResult, ScoreResult, Adapter};
+use decide_rs::adapter::{AdaptedAnswer, Adapter, ChoiceResult, NoulResult, ScoreResult};
 use julia1::{Answer, Answers, QType};
 use serde_json::json;
 
 /// Build synthetic [`Answers`] from raw probability vectors.
 fn synth_answers(questions: &[(&str, QType, Vec<String>, Vec<f64>)]) -> Answers {
-    questions.iter().map(|(qid, qtype, keys, probs)| {
-        (qid.to_string(), Answer {
-            qtype: *qtype,
-            keys: keys.clone(),
-            probabilities: probs.clone(),
+    questions
+        .iter()
+        .map(|(qid, qtype, keys, probs)| {
+            (
+                qid.to_string(),
+                Answer {
+                    qtype: *qtype,
+                    keys: keys.clone(),
+                    probabilities: probs.clone(),
+                },
+            )
         })
-    }).collect()
+        .collect()
 }
 
 // ---- Choice mapping tests ----
 
 #[test]
 fn choice_argmax_selects_highest_probability() {
-    let probs = vec![0.1, 0.7, 0.2];
-    let ids = vec!["billing", "platform", "account"];
-    let idx = probs.iter().enumerate()
+    let probs = [0.1, 0.7, 0.2];
+    let ids = ["billing", "platform", "account"];
+    let idx = probs
+        .iter()
+        .enumerate()
         .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
-        .map(|(i, _)| i).unwrap();
+        .map(|(i, _)| i)
+        .unwrap();
     assert_eq!(ids[idx], "platform");
 }
 
 #[test]
 fn choice_tie_goes_to_first_index() {
     use std::cmp::Ordering;
-    let probs = vec![0.4, 0.4, 0.2];
-    let idx = probs.iter().enumerate()
-        .max_by(|(i_a, p_a), (i_b, p_b)| {
-            match p_a.partial_cmp(p_b).unwrap() {
+    let probs = [0.4, 0.4, 0.2];
+    let idx = probs
+        .iter()
+        .enumerate()
+        .max_by(
+            |(i_a, p_a), (i_b, p_b)| match p_a.partial_cmp(p_b).unwrap() {
                 Ordering::Greater => Ordering::Greater,
                 Ordering::Less => Ordering::Less,
                 Ordering::Equal => i_a.cmp(i_b).reverse(),
-            }
-        })
+            },
+        )
         .map(|(i, _)| i)
         .unwrap_or(0);
     assert_eq!(idx, 0, "tie should pick first index");
@@ -48,11 +59,17 @@ fn choice_tie_goes_to_first_index() {
 
 #[test]
 fn choice_probabilities_preserve_order() {
-    let criterion_ids: Vec<(String, String)> = vec![("billing".into(), "Payments".into()), ("platform".into(), "Checkout".into()), ("account".into(), "Identity".into())];
-    let probs = vec![0.1, 0.7, 0.2];
-    let mapped: Vec<(String, f64)> = criterion_ids.iter().enumerate().map(|(i, (id, _))| {
-        (id.clone(), probs[i])
-    }).collect();
+    let criterion_ids: Vec<(String, String)> = vec![
+        ("billing".into(), "Payments".into()),
+        ("platform".into(), "Checkout".into()),
+        ("account".into(), "Identity".into()),
+    ];
+    let probs = [0.1, 0.7, 0.2];
+    let mapped: Vec<(String, f64)> = criterion_ids
+        .iter()
+        .enumerate()
+        .map(|(i, (id, _))| (id.clone(), probs[i]))
+        .collect();
     assert_eq!(mapped[0], ("billing".into(), 0.1f64));
     assert_eq!(mapped[1], ("platform".into(), 0.7f64));
     assert_eq!(mapped[2], ("account".into(), 0.2f64));
@@ -78,23 +95,34 @@ fn noul_true_index_is_second_element() {
 fn score_expected_value_is_one_indexed() {
     // P(Calm)=0.2, P(Annoyed)=0.5, P(Angry)=0.3
     // Expected = 1*0.2 + 2*0.5 + 3*0.3 = 2.1
-    let probs = vec![0.2, 0.5, 0.3];
-    let expected: f64 = probs.iter().enumerate().map(|(i, &p)| (i + 1) as f64 * p).sum();
-    assert!((expected - 2.1).abs() < 1e-6, "expected 2.1, got {expected}");
+    let probs = [0.2, 0.5, 0.3];
+    let expected: f64 = probs
+        .iter()
+        .enumerate()
+        .map(|(i, &p)| (i + 1) as f64 * p)
+        .sum();
+    assert!(
+        (expected - 2.1).abs() < 1e-6,
+        "expected 2.1, got {expected}"
+    );
 }
 
 #[test]
 fn score_two_levels_expected_value() {
     // Binary rubric: P(Low)=0.8, P(High)=0.2
     // Expected = 1*0.8 + 2*0.2 = 1.2
-    let probs = vec![0.8, 0.2];
-    let expected: f64 = probs.iter().enumerate().map(|(i, &p)| (i + 1) as f64 * p).sum();
+    let probs = [0.8, 0.2];
+    let expected: f64 = probs
+        .iter()
+        .enumerate()
+        .map(|(i, &p)| (i + 1) as f64 * p)
+        .sum();
     assert!((expected - 1.2).abs() < 1e-6);
 }
 
 #[test]
 fn score_probabilities_sum_invariant() {
-    let probs = vec![0.33, 0.34, 0.33];
+    let probs = [0.33, 0.34, 0.33];
     let sum: f64 = probs.iter().sum();
     assert!((sum - 1.0).abs() < 1e-4);
 }
@@ -106,7 +134,7 @@ fn confidence_uniform_distribution() {
     // For n options, uniform probability = 1/n each -> confidence = 0
     let probs = vec![0.5, 0.5]; // n=2
     assert!((Adapter::compute_confidence(&probs) - 0.0).abs() < 1e-6);
-    let probs = vec![1.0/3.0, 1.0/3.0, 1.0/3.0]; // n=3
+    let probs = vec![1.0 / 3.0, 1.0 / 3.0, 1.0 / 3.0]; // n=3
     assert!((Adapter::compute_confidence(&probs) - 0.0).abs() < 1e-6);
     let probs = vec![0.25, 0.25, 0.25, 0.25]; // n=4
     assert!((Adapter::compute_confidence(&probs) - 0.0).abs() < 1e-6);
@@ -143,7 +171,10 @@ fn confidence_score_example_from_docs() {
 
 #[test]
 fn confidence_choice_result_includes_confidence() {
-    let criterion_ids = vec![("billing".into(), "Payments".into()), ("platform".into(), "Checkout".into())];
+    let criterion_ids = vec![
+        ("billing".into(), "Payments".into()),
+        ("platform".into(), "Checkout".into()),
+    ];
     let answer = Answer {
         qtype: QType::Choice,
         keys: vec!["billing".into(), "platform".into()],
@@ -156,7 +187,7 @@ fn confidence_choice_result_includes_confidence() {
 
 #[test]
 fn confidence_score_result_includes_confidence() {
-    let levels = vec!["Low".into(), "Medium".into(), "High".into()];
+    let levels = ["Low".to_string(), "Medium".to_string(), "High".to_string()];
     let answer = Answer {
         qtype: QType::Score,
         keys: vec![],
@@ -181,14 +212,25 @@ fn answers_json(answers: &[(String, AdaptedAnswer)]) -> serde_json::Value {
 fn adapted_to_json(answer: &AdaptedAnswer) -> serde_json::Value {
     match answer {
         AdaptedAnswer::Choice(c) => {
-            let probs: serde_json::Map<String, serde_json::Value> =
-                c.probabilities.iter().map(|(k, p)| (k.clone(), json!(p))).collect();
+            let probs: serde_json::Map<String, serde_json::Value> = c
+                .probabilities
+                .iter()
+                .map(|(k, p)| (k.clone(), json!(p)))
+                .collect();
             let mut out = serde_json::Map::new();
             out.insert("type".into(), json!("choice"));
             out.insert("probabilities".into(), serde_json::Value::Object(probs));
             out.insert("choice".into(), json!(c.winner));
             out.insert("confidence".into(), json!(c.confidence));
-            out.insert("max_probability".into(), json!(c.probabilities.iter().map(|(_, p)| *p).fold(f64::NEG_INFINITY, f64::max)));
+            out.insert(
+                "max_probability".into(),
+                json!(
+                    c.probabilities
+                        .iter()
+                        .map(|(_, p)| *p)
+                        .fold(f64::NEG_INFINITY, f64::max)
+                ),
+            );
             serde_json::Value::Object(out)
         }
         AdaptedAnswer::Noul(n) => {
@@ -198,14 +240,25 @@ fn adapted_to_json(answer: &AdaptedAnswer) -> serde_json::Value {
             serde_json::Value::Object(out)
         }
         AdaptedAnswer::Score(s) => {
-            let probs: serde_json::Map<String, serde_json::Value> =
-                s.probabilities.iter().map(|(k, p)| (k.clone(), json!(p))).collect();
+            let probs: serde_json::Map<String, serde_json::Value> = s
+                .probabilities
+                .iter()
+                .map(|(k, p)| (k.clone(), json!(p)))
+                .collect();
             let mut out = serde_json::Map::new();
             out.insert("type".into(), json!("score"));
             out.insert("probabilities".into(), serde_json::Value::Object(probs));
             out.insert("score".into(), json!(s.expected_score));
             out.insert("confidence".into(), json!(s.confidence));
-            out.insert("max_probability".into(), json!(s.probabilities.iter().map(|(_, p)| *p).fold(f64::NEG_INFINITY, f64::max)));
+            out.insert(
+                "max_probability".into(),
+                json!(
+                    s.probabilities
+                        .iter()
+                        .map(|(_, p)| *p)
+                        .fold(f64::NEG_INFINITY, f64::max)
+                ),
+            );
             serde_json::Value::Object(out)
         }
     }
@@ -236,7 +289,10 @@ fn choice_json_has_winner_and_probabilities() {
 
 #[test]
 fn noul_json_has_noul_field() {
-    let results = &[("urgent".into(), AdaptedAnswer::Noul(NoulResult { prob_true: 0.85 }))];
+    let results = &[(
+        "urgent".into(),
+        AdaptedAnswer::Noul(NoulResult { prob_true: 0.85 }),
+    )];
     let json = answers_json(results);
     let urgent = &json["answers"]["urgent"];
     assert_eq!(urgent["type"].as_str(), Some("noul"));
@@ -248,7 +304,11 @@ fn score_json_has_expected_score_and_levels() {
     let results = &[(
         "frustration".into(),
         AdaptedAnswer::Score(ScoreResult {
-            probabilities: vec![("Calm".into(), 0.1), ("Annoyed".into(), 0.6), ("Angry".into(), 0.3)],
+            probabilities: vec![
+                ("Calm".into(), 0.1),
+                ("Annoyed".into(), 0.6),
+                ("Angry".into(), 0.3),
+            ],
             expected_score: 2.2,
             confidence: 0.4, // (3*0.6 -1)/2 = 0.4
         }),
@@ -266,9 +326,24 @@ fn score_json_has_expected_score_and_levels() {
 #[test]
 fn synth_answers_structure_matches_julia1() {
     let answers = synth_answers(&[
-        ("q1", QType::Choice, vec!["a".into(), "b".into()], vec![0.3, 0.7]),
-        ("q2", QType::Noul, vec!["false".into(), "true".into()], vec![0.5, 0.5]),
-        ("q3", QType::Score, vec!["0".into(), "1".into(), "2".into()], vec![0.2, 0.5, 0.3]),
+        (
+            "q1",
+            QType::Choice,
+            vec!["a".into(), "b".into()],
+            vec![0.3, 0.7],
+        ),
+        (
+            "q2",
+            QType::Noul,
+            vec!["false".into(), "true".into()],
+            vec![0.5, 0.5],
+        ),
+        (
+            "q3",
+            QType::Score,
+            vec!["0".into(), "1".into(), "2".into()],
+            vec![0.2, 0.5, 0.3],
+        ),
     ]);
     assert_eq!(answers.len(), 3);
     assert_eq!(answers[0].0, "q1");

@@ -2,6 +2,11 @@
 name = "decide-rs"
 version = "0.1.0"
 edition = "2024"
+license = "MIT"
+repository = "https://github.com/AndyTechnologies/decide-rs"
+description = "Local CLI for structured decisions using Julia-1 model via MCP"
+keywords = ["decision", "mcp", "julia", "ai", "cli"]
+categories = ["command-line-utilities", "machine-learning"]
 
 [dependencies]
 anyhow = "=1.0.104"

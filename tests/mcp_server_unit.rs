@@ -2,7 +2,7 @@
 
 use decide_rs::adapter::Adapter;
 use decide_rs::adapter::{AdaptedAnswer, ChoiceResult, NoulResult, ScoreResult};
-use serde_json::{json, Value, Map};
+use serde_json::{Map, Value, json};
 use std::path::Path;
 use std::sync::Arc;
 
@@ -16,10 +16,13 @@ fn test_tool_schema_structure() {
     props.insert("state".to_string(), Value::String("string".to_string()));
     props.insert("questions".to_string(), Value::String("object".to_string()));
     schema_map.insert("properties".to_string(), Value::Object(props));
-    schema_map.insert("required".to_string(), Value::Array(vec![
-        Value::String("state".to_string()),
-        Value::String("questions".to_string()),
-    ]));
+    schema_map.insert(
+        "required".to_string(),
+        Value::Array(vec![
+            Value::String("state".to_string()),
+            Value::String("questions".to_string()),
+        ]),
+    );
     let schema: Arc<Map<String, Value>> = Arc::new(schema_map);
 
     let tool = Tool::new("decide_choice", "Run a choice decision", schema);
@@ -46,7 +49,7 @@ fn test_adapter_answers_to_json_structure() {
         return;
     };
     let json = adapter.answers_to_json(&answers);
-    
+
     assert!(json.get("answers").is_some());
     let answers_obj = json["answers"].as_object().unwrap();
     assert!(answers_obj.contains_key("route"));
@@ -59,7 +62,7 @@ fn test_adapter_answers_to_json_structure() {
     let noul = AdaptedAnswer::Noul(NoulResult { prob_true: 0.8 });
     let answers = vec![("urgent".to_string(), noul)];
     let json = adapter.answers_to_json(&answers);
-    
+
     let answers_obj = json["answers"].as_object().unwrap();
     assert!(answers_obj.contains_key("urgent"));
     let urgent = &answers_obj["urgent"];
@@ -68,13 +71,17 @@ fn test_adapter_answers_to_json_structure() {
 
     // Test ScoreResult serialization
     let score = AdaptedAnswer::Score(ScoreResult {
-        probabilities: vec![("Calm".to_string(), 0.1), ("Annoyed".to_string(), 0.3), ("Angry".to_string(), 0.6)],
+        probabilities: vec![
+            ("Calm".to_string(), 0.1),
+            ("Annoyed".to_string(), 0.3),
+            ("Angry".to_string(), 0.6),
+        ],
         expected_score: 2.5,
         confidence: 0.2,
     });
     let answers = vec![("frustration".to_string(), score)];
     let json = adapter.answers_to_json(&answers);
-    
+
     let answers_obj = json["answers"].as_object().unwrap();
     assert!(answers_obj.contains_key("frustration"));
     let frustration = &answers_obj["frustration"];
@@ -187,8 +194,7 @@ mod integration {
 mod tool_surface {
     use decide_rs::adapter::Adapter;
     use decide_rs::mcp::{self, ToolError};
-    use rmcp::model::CallToolResult;
-    use serde_json::{json, Value};
+    use serde_json::{Value, json};
 
     fn adapter_if_model_available() -> Option<Adapter> {
         let path = std::path::Path::new("julia-checkpoint");
@@ -249,8 +255,10 @@ mod tool_surface {
         let err = mcp::prepare_call("decide_noul", &args).unwrap_err();
         match err {
             ToolError::Schema(errors) => {
-                assert!(errors.iter().any(|e| e.path == "arguments.questions"),
-                    "expected arguments.questions violation, got {errors:?}");
+                assert!(
+                    errors.iter().any(|e| e.path == "arguments.questions"),
+                    "expected arguments.questions violation, got {errors:?}"
+                );
             }
             other => panic!("expected Schema error, got {other:?}"),
         }
@@ -268,9 +276,11 @@ mod tool_surface {
         let err = mcp::prepare_call("decide_choice", &args).unwrap_err();
         match err {
             ToolError::Schema(errors) => {
-                assert!(errors.iter().any(|e| e.path == "questions.urgent.type"
-                    && e.message.contains("does not match tool decide_choice")),
-                    "expected type-mismatch violation, got {errors:?}");
+                assert!(
+                    errors.iter().any(|e| e.path == "questions.urgent.type"
+                        && e.message.contains("does not match tool decide_choice")),
+                    "expected type-mismatch violation, got {errors:?}"
+                );
             }
             other => panic!("expected Schema error, got {other:?}"),
         }
@@ -301,8 +311,8 @@ mod tool_surface {
             return;
         };
         let args: Value = serde_json::from_str(ARGS).unwrap();
-        let answers = mcp::run_tool(&adapter, "decide_choice", &args)
-            .expect("valid call must succeed");
+        let answers =
+            mcp::run_tool(&adapter, "decide_choice", &args).expect("valid call must succeed");
         let route = &answers["answers"]["route"];
         assert_eq!(route["type"], "choice");
         assert!(route["probabilities"].is_object());
@@ -314,6 +324,4 @@ mod tool_surface {
         let text = result.content[0].as_text().unwrap().text.clone();
         assert_eq!(serde_json::from_str::<Value>(&text).unwrap(), answers);
     }
-
-
 }

@@ -64,8 +64,9 @@ impl std::fmt::Display for AdapterError {
             AdapterError::MissingQuestion(qid) => write!(f, "question not found in request: {qid}"),
             AdapterError::TypeMismatch => write!(f, "type mismatch between tool and question"),
             AdapterError::EmptyProbabilities => write!(f, "probabilities vector is empty"),
-            AdapterError::LengthMismatch { expected, got } =>
-                write!(f, "length mismatch: expected {expected}, got {got}"),
+            AdapterError::LengthMismatch { expected, got } => {
+                write!(f, "length mismatch: expected {expected}, got {got}")
+            }
             AdapterError::NaNProbability => write!(f, "NaN encountered in probability vector"),
             AdapterError::MissingTrueKey => write!(f, "required 'true' key missing in noul answer"),
         }
@@ -76,7 +77,9 @@ impl std::error::Error for AdapterError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             AdapterError::Engine(err) => Some(err.as_ref() as &(dyn std::error::Error + 'static)),
-            AdapterError::EngineLoad(err) => Some(err.as_ref() as &(dyn std::error::Error + 'static)),
+            AdapterError::EngineLoad(err) => {
+                Some(err.as_ref() as &(dyn std::error::Error + 'static))
+            }
             _ => None,
         }
     }
@@ -97,7 +100,11 @@ impl std::fmt::Display for ToolError {
                     .iter()
                     .map(|e| format!("  {}: {}", e.path, e.message))
                     .collect();
-                write!(f, "request rejected before inference:\n{}", details.join("\n"))
+                write!(
+                    f,
+                    "request rejected before inference:\n{}",
+                    details.join("\n")
+                )
             }
             Self::Engine(err) => write!(f, "{err:#}"),
         }
@@ -135,7 +142,13 @@ fn canonical_json_string(value: &Value) -> String {
             keys.sort();
             let inner: Vec<String> = keys
                 .iter()
-                .map(|key| format!("{}:{}", serde_json::to_string(key).expect("key"), canonical_json_string(&map[*key])))
+                .map(|key| {
+                    format!(
+                        "{}:{}",
+                        serde_json::to_string(key).expect("key"),
+                        canonical_json_string(&map[*key])
+                    )
+                })
                 .collect();
             format!("{{{}}}", inner.join(","))
         }
@@ -205,12 +218,12 @@ pub fn prepare_call(name: &str, args: &Value) -> Result<PreparedCall, ToolError>
 /// shape, full typed schema validation and canonical state, without a tool
 /// type constraint.
 pub fn parse_arguments(args: &Value) -> Result<PreparedCall, ToolError> {
-    let args = args
-        .as_object()
-        .ok_or_else(|| ToolError::Schema(vec![SchemaError {
+    let args = args.as_object().ok_or_else(|| {
+        ToolError::Schema(vec![SchemaError {
             path: "arguments".into(),
             message: "arguments must be an object".into(),
-        }]))?;
+        }])
+    })?;
     let Some(state) = args.get("state") else {
         return Err(ToolError::Schema(vec![SchemaError {
             path: "arguments.state".into(),
@@ -224,8 +237,7 @@ pub fn parse_arguments(args: &Value) -> Result<PreparedCall, ToolError> {
         }]));
     };
     // Full typed schema validation BEFORE inference (schema errors carry paths).
-    let request = crate::schema::parse_request(state, questions)
-        .map_err(ToolError::Schema)?;
+    let request = crate::schema::parse_request(state, questions).map_err(ToolError::Schema)?;
     Ok(PreparedCall {
         state_text: canonical_state_text(&request.state),
         questions: questions.clone(),

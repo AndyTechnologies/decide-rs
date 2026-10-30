@@ -7,12 +7,20 @@
 
 ## Tareas
 
-- [ ] 1. Crear documento ODD Fase 8f.
-- [ ] 2. `.github/workflows/ci.yml`: `cargo fmt --check`, `cargo clippy --all-targets --all-features -- -D warnings`, `cargo test`, `cargo build --release`, `npm --prefix extensions/pi-decide run build`.
-- [ ] 3. Cache de cargo y npm para velocidad.
-- [ ] 6. Job opcional `integration` que descarga el modelo si hay secreto `HF_TOKEN` y corre `--ignored`.
-- [ ] 7. Badge de estado en README.
-- [ ] 8. Cierre: evidencia en doc y commit.
+- [x] 1. Crear documento ODD Fase 8f.
+- [x] 2. `.github/workflows/ci.yml`: `cargo fmt --check`, `cargo clippy --all-targets --all-features -- -D warnings`, `cargo test`, `cargo build --release`, `npm --prefix extensions/pi-decide run build`.
+- [x] 3. Cache de cargo y npm para velocidad.
+- [x] 4. Job opcional `integration` que descarga el modelo si hay secreto `HF_TOKEN` y corre `--ignored` (implementado como step condicional).
+- [x] 5. Badge de estado en README.
+- [x] 6. Cierre: evidencia en doc y commit.
+
+## Log
+
+- L8f.1: `.github/workflows/ci.yml` creado con jobs `rust` (fmt, clippy, test, build release) y `typescript` (npm build de la extensión).
+- L8f.2: Cache de cargo y npm configurado.
+- L8f.3: Job `release` condicional en tags `v*` que empaqueta los 3 binarios y sube artifacts.
+- L8f.3: Badge de CI añadido a README (se renderizará cuando el repo esté en GitHub).
+- L8f.4: Verificación local: `cargo fmt --check`, `cargo clippy --all-targets --all-features -- -D warnings`, `cargo test`, `cargo build --release`, `npm --prefix extensions/pi-decide run build` → todo pasa.
 
 ---
 

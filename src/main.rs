@@ -47,20 +47,14 @@ per line. exit codes: 0 ok, 1 runtime error, 2 usage, 3 rejected request.
 ";
 
 /// Exhaust the rest of the command line collecting command options.
-fn parse_command_tail(
-    argv: &mut impl Iterator<Item = String>,
-    parsed: &mut Args,
-) {
+fn parse_command_tail(argv: &mut impl Iterator<Item = String>, parsed: &mut Args) {
     while let Some(rest) = argv.next() {
         match rest.as_str() {
             "--jsonl" => parsed.jsonl = true,
             "--lenient" => parsed.lenient = true,
             "--pretty" => parsed.pretty = true,
             "--model" => {
-                let value = argv
-                    .next()
-                    .ok_or("--model requires a PATH argument")
-                    .ok();
+                let value = argv.next().ok_or("--model requires a PATH argument").ok();
                 match value {
                     Some(path) => parsed.model = Some(PathBuf::from(path)),
                     None => {
@@ -165,6 +159,7 @@ impl Args {
 
 /// Validate before touching the engine, so rejections use exit code 3
 /// even when no checkpoint is available.
+#[allow(dead_code)]
 fn prepare(kind: &str, args: &serde_json::Value) -> Result<mcp::PreparedCall, i32> {
     mcp::prepare_call(kind, args).map_err(|err| {
         eprintln!("error: {err}");
@@ -173,7 +168,9 @@ fn prepare(kind: &str, args: &serde_json::Value) -> Result<mcp::PreparedCall, i3
 }
 
 fn load_adapter(model: Option<&Path>) -> Result<Adapter, i32> {
-    let path = model.map(Path::to_owned).unwrap_or_else(decide_rs::resolve_model_path);
+    let path = model
+        .map(Path::to_owned)
+        .unwrap_or_else(decide_rs::resolve_model_path);
     Adapter::new(&path).map_err(|err| {
         eprintln!("error: {err:#}");
         1
@@ -203,12 +200,10 @@ fn read_input(file: Option<&str>) -> Result<String, i32> {
     match file {
         Some("-") | None => {
             let mut buf = String::new();
-            std::io::stdin()
-                .read_to_string(&mut buf)
-                .map_err(|err| {
-                    eprintln!("error reading stdin: {err}");
-                    1
-                })?;
+            std::io::stdin().read_to_string(&mut buf).map_err(|err| {
+                eprintln!("error reading stdin: {err}");
+                1
+            })?;
             Ok(buf)
         }
         Some(path) => std::fs::read_to_string(path).map_err(|err| {
@@ -255,7 +250,10 @@ fn run(args: Args) -> Result<(), i32> {
                 eprintln!("error: {err:#}");
                 return Err(1);
             }
-            println!("checkpoint ready at {} (revision {REVISION})", dest.display());
+            println!(
+                "checkpoint ready at {} (revision {REVISION})",
+                dest.display()
+            );
             Ok(())
         }
         Command::Demo => {

@@ -2,10 +2,11 @@
   "name": "pi-decide",
   "version": "0.1.0",
   "description": "Pi extension for structured decision-making via decide-rs MCP server",
-  "main": "src/extension.ts",
+  "main": "dist/extension.js",
   "scripts": {
     "build": "tsc",
-    "dev": "tsc --watch"
+    "dev": "tsc --watch",
+    "prepare": "npm run build"
   },
   "dependencies": {
     "@earendil-works/pi-coding-agent": "^1.3.0",
@@ -14,5 +15,25 @@
   "devDependencies": {
     "typescript": "^5.6.0"
   },
-  "private": true
+  "pi": {
+    "extension": true,
+    "name": "pi-decide",
+    "displayName": "Decide-RS Decision Engine",
+    "description": "Registers the decide-rs MCP server and adds decision evaluation guidance to Pi agents",
+    "mcpServers": {
+      "decide-rs": {
+        "command": "decide-rs-mcp",
+        "args": [],
+        "env": {
+          "DECIDE_RS_MODEL_PATH": "${DECIDE_RS_MODEL_PATH:-~/.local/share/decide-rs/julia-checkpoint}"
+        }
+      }
+    }
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/AndyTechnologies/decide-rs"
+  },
+  "private": false
 }

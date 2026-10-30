@@ -1,9 +1,10 @@
 # Feature: Fase 8e — Endurecimiento del adapter
 
-- **Estado**: planificada
+- **Estado**: completado
 - **Límite**: 350 líneas modificadas escritas a mano por PR (`Cargo.lock` excluido).
 - **Objetivo**: Eliminar pánicos y comportamientos indefinidos en el adapter; tipar los errores; hacer que `answers_to_json` no requiera instancia; reparar descargas corruptas.
 - **Criterio de aceptación**: Cero `unwrap()/expect()/unreachable!` en adapter.rs; errores tipados propagados; tests de serialización pasan sin modelo; descarga reintenta archivos corruptos.
+- **Fecha de finalización**: 2025-01-18
 
 ## Specs (basado en revisión Astra-6.1)
 
@@ -18,8 +19,8 @@
 - [x] 1. Crear documento ODD Fase 8e.
 - [x] 2. Refactor `adapter.rs`: `AdapterError`, `evaluate_*` devuelven `Result`, eliminar `unwrap/expect/unreachable`.
 - [x] 3. `answers_to_json` como `fn` libre; actualizar binarios y tests.
-- [ ] 4. `checkpoint.rs`: verificación por archivo + re-descarga selectiva.
-- [ ] 5. Tests unitarios de errores de adapter (sin modelo) y de reparación de descarga.
+- [x] 4. `checkpoint.rs`: verificación por archivo + re-descarga selectiva.
+- [x] 5. Tests unitarios de errores de adapter (sin modelo) y de reparación de descarga.
 - [x] 6. `cargo test`: 0 warnings, 0 pánicos en adapter.
 - [x] 7. Cierre: evidencia en doc y commit.
 

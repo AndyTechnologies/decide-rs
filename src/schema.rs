@@ -154,7 +154,7 @@ impl QuestionType {
                     if id.is_empty() {
                         errors.push(&cpath, "choice ids must be non-empty");
                     }
-                    let Some(desc) = text(&description) else {
+                    let Some(desc) = text(description) else {
                         errors.push(&cpath, "choice description must be non-empty");
                         continue;
                     };

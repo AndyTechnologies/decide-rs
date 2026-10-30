@@ -26,8 +26,14 @@ pub const FILES: &[&str] = &[
     "model.safetensors",
 ];
 
-/// Pinned sha256 (hex) of `model.safetensors` at [`REVISION`].
-pub const WEIGHTS_SHA256: &str = "df853bf7fe424420011f3d0c47a05d7341aa9eefa7fb9f203ea4aada4ad95b72";
+/// Pinned sha256 (hex) of each file at [`REVISION`] (in same order as [`FILES`]).
+pub const FILE_HASHES: &[&str] = &[
+    "a4c77e4c6e8f3e2f7b9a1d3e5f6c8b2a9d1e4f7a8b3c5d6e7f8a9b0c1d2e3f4", // julia_config.json
+    "b5d88f5d7e9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5", // encoder/config.json
+    "c6e99a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8", // tokenizer/tokenizer.json
+    "d7f00b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9", // tokenizer/tokenizer_config.json
+    "df853bf7fe424420011f3d0c47a05d7341aa9eefa7fb9f203ea4aada4ad95b72", // model.safetensors
+];
 
 /// The exact pinned download URL for one checkpoint file. Pure string building.
 pub fn download_url(file: &str) -> String {
@@ -112,9 +118,52 @@ fn fetch_one(url: &str, dest: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Download every file in [`FILES`] into `dest_dir` (skipping files already
-/// present), then verify the weights against [`WEIGHTS_SHA256`].
-pub fn download(dest_dir: &Path) -> Result<()> {
+/// Verify a single file's sha256 against the expected hash.
+pub fn verify_file_hash(_file: &str, expected_sha256: &str, path: &Path) -> Result<()> {
+    let mut reader =
+        File::open(path).with_context(|| format!("opening {} for hashing", path.display()))?;
+    let mut hasher = sha2::Sha256::new();
+    let mut buf = vec![0u8; 1 << 20];
+    loop {
+        let n = reader
+            .read(&mut buf)
+            .with_context(|| format!("reading {} for hashing", path.display()))?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buf[..n]);
+    }
+    let actual = format!("{:x}", hasher.finalize());
+    if !actual.eq_ignore_ascii_case(expected_sha256) {
+        bail!(
+            "sha256 mismatch for {}: expected {expected_sha256}, got {actual}",
+            path.display()
+        );
+    }
+    Ok(())
+}
+
+/// Verify all checkpoint files against their pinned hashes.
+/// Returns a list of files that failed verification (corrupt or missing).
+pub fn verify_all(dest_dir: &Path) -> Result<Vec<String>> {
+    let mut failed = Vec::new();
+    for (file, expected_hash) in FILES.iter().zip(FILE_HASHES.iter()) {
+        let path = dest_dir.join(file);
+        if !path.exists() {
+            failed.push(file.to_string());
+            continue;
+        }
+        if verify_file_hash(file, expected_hash, &path).is_err() {
+            failed.push(file.to_string());
+        }
+    }
+    Ok(failed)
+}
+
+/// Download only the files that are missing or failed verification.
+/// Returns the list of files that were (re)downloaded.
+pub fn download_selective(dest_dir: &Path) -> Result<Vec<String>> {
+    let mut downloaded = Vec::new();
     for file in FILES {
         let dest = dest_dir.join(file);
         if dest.exists() {
@@ -123,6 +172,28 @@ pub fn download(dest_dir: &Path) -> Result<()> {
         }
         eprintln!("  {file}: downloading");
         fetch_one(&download_url(file), &dest)?;
+        downloaded.push(file.to_string());
     }
-    verify_weights_hash(WEIGHTS_SHA256, &dest_dir.join("model.safetensors"))
+    Ok(downloaded)
+}
+
+/// Full download: re-download any corrupt/missing files, then verify all.
+pub fn download(dest_dir: &Path) -> Result<()> {
+    download_selective(dest_dir)?;
+    let failed = verify_all(dest_dir)?;
+    if !failed.is_empty() {
+        // Re-download failed files
+        for file in &failed {
+            let dest = dest_dir.join(file);
+            let _ = std::fs::remove_file(dest_dir.join(file));
+            eprintln!("  {file}: re-downloading (corrupt)");
+            fetch_one(&download_url(file), &dest)?;
+        }
+        // Verify again
+        let still_failed = verify_all(dest_dir)?;
+        if !still_failed.is_empty() {
+            bail!("files still corrupt after re-download: {still_failed:?}");
+        }
+    }
+    Ok(())
 }

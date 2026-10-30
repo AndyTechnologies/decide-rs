@@ -88,28 +88,29 @@ impl ServerHandler for McpServer {
         }
     }
 
-    fn list_tools(
+    async fn list_tools(
         &self,
         _request: Option<PaginatedRequestParams>,
         _context: RequestContext<RoleServer>,
-    ) -> impl Future<Output = Result<ListToolsResult, McpError>> + MaybeSendFuture + '_ {
-        async move {
-            let tools = mcp::tool_specs()
-                .into_iter()
-                .map(|(name, description, schema)| {
-                    let map = schema.as_object().cloned().expect("tool schema is an object");
-                    Tool::new(name, description, map)
-                })
-                .collect();
-            Ok(ListToolsResult {
-                tools,
-                cache_scope: None,
-                meta: None,
-                next_cursor: None,
-                result_type: None,
-                ttl_ms: None,
+    ) -> Result<ListToolsResult, McpError> {
+        let tools = mcp::tool_specs()
+            .into_iter()
+            .map(|(name, description, schema)| {
+                let map = schema
+                    .as_object()
+                    .cloned()
+                    .expect("tool schema is an object");
+                Tool::new(name, description, map)
             })
-        }
+            .collect();
+        Ok(ListToolsResult {
+            tools,
+            cache_scope: None,
+            meta: None,
+            next_cursor: None,
+            result_type: None,
+            ttl_ms: None,
+        })
     }
 
     fn get_info(&self) -> ServerConfig {
@@ -125,8 +126,10 @@ fn main() -> Result<()> {
 
     eprintln!("Loading model from: {}", model_path.display());
 
-    let state = Arc::new(McpServerState::new(&model_path)
-        .with_context(|| "Failed to initialize MCP server state")?);
+    let state = Arc::new(
+        McpServerState::new(&model_path)
+            .with_context(|| "Failed to initialize MCP server state")?,
+    );
 
     // Create the handler.
     let handler = McpServer { state };

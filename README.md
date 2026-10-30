@@ -99,3 +99,9 @@ Tool names follow the MCP pattern recommendation (`decide_choice`, `decide_noul`
 ## License
 
 TBD.
+
+---
+
+## CI Status
+
+![CI](https://github.com/AndyTechnologies/decide-rs/workflows/CI/badge.svg)

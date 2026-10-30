@@ -31,7 +31,7 @@ fn choice_criteria(count: usize) -> Value {
 
 /// Assert exactly one violation at `path` whose message contains `fragment`.
 fn bad(state: Value, questions: Value, path: &str, fragment: &str) {
-    let mut errors = parse_request(&state, &questions).err().expect("rejected");
+    let mut errors = parse_request(&state, &questions).expect_err("rejected");
     assert_eq!(errors.len(), 1, "got {errors:?}");
     let error = errors.remove(0);
     assert_eq!(error.path, path, "{error:?}");
@@ -170,8 +170,8 @@ fn invalid_request_yields_identical_error_vectors() {
         "b": ch(json!(["not an object"])),
         "a": q("ranking", json!({})),
     });
-    let first = parse_request(&state, &questions).err().expect("rejected");
-    let second = parse_request(&state, &questions).err().expect("rejected");
+    let first = parse_request(&state, &questions).expect_err("rejected");
+    let second = parse_request(&state, &questions).expect_err("rejected");
     assert_eq!(first, second, "same input must yield identical errors");
     let paths: Vec<&str> = first.iter().map(|e| e.path.as_str()).collect();
     assert_eq!(paths, ["state", "questions.b.criteria", "questions.a.type"]);

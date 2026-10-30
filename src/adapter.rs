@@ -3,12 +3,10 @@
 /// The adapter wraps the engine, calls `predict_typed` once, and translates the
 /// raw softmax answers into typed [`AdaptedAnswer`] variants that carry the
 /// caller's criterion IDs or rubric levels alongside the probabilities.
-use crate::{load_engine, run_decisions};
+use crate::load_engine;
 use crate::mcp::AdapterError;
-use std::cmp::Ordering;
 use julia1::{Answer, Answers, Engine};
-use crate::schema::{Criteria, Question, QuestionType, Request};
-use serde_json::{json, Map, Value};
+use std::cmp::Ordering;
 use std::path::Path;
 
 /// Adapted result for all three question types.
@@ -76,19 +74,30 @@ impl Adapter {
     }
 
     /// Validate the request and run inference, returning adapted answers.
-    pub fn run(&self, state: &str, questions: &serde_json::Value) -> Result<Vec<(String, AdaptedAnswer)>, AdapterError> {
-        let request = crate::schema::parse_request(&serde_json::Value::String(state.to_owned()), questions)
-            .map_err(AdapterError::Schema)?;
-        let answers = crate::run_decisions(&self.engine, state, questions)
-            .map_err(AdapterError::Engine)?;
+    pub fn run(
+        &self,
+        state: &str,
+        questions: &serde_json::Value,
+    ) -> Result<Vec<(String, AdaptedAnswer)>, AdapterError> {
+        let request =
+            crate::schema::parse_request(&serde_json::Value::String(state.to_owned()), questions)
+                .map_err(AdapterError::Schema)?;
+        let answers =
+            crate::run_decisions(&self.engine, state, questions).map_err(AdapterError::Engine)?;
         self.evaluate(&request, &answers)
     }
 
     /// Translate raw [`Answers`] into typed [`AdaptedAnswer`]s using schema context.
-    pub fn evaluate(&self, request: &crate::schema::Request, answers: &Answers) -> Result<Vec<(String, AdaptedAnswer)>, AdapterError> {
+    pub fn evaluate(
+        &self,
+        request: &crate::schema::Request,
+        answers: &Answers,
+    ) -> Result<Vec<(String, AdaptedAnswer)>, AdapterError> {
         let mut results = Vec::with_capacity(answers.len());
         for (qid, answer) in answers.iter() {
-            let question = request.questions.iter()
+            let question = request
+                .questions
+                .iter()
                 .find(|(id, _)| id == qid)
                 .ok_or_else(|| AdapterError::MissingQuestion(qid.clone()))?;
             let adapted = match &question.1 {
@@ -113,7 +122,10 @@ impl Adapter {
         Ok(results)
     }
 
-    pub fn evaluate_choice(answer: &Answer, criterion_ids: &[(String, String)]) -> Result<ChoiceResult, AdapterError> {
+    pub fn evaluate_choice(
+        answer: &Answer,
+        criterion_ids: &[(String, String)],
+    ) -> Result<ChoiceResult, AdapterError> {
         if answer.probabilities.is_empty() {
             return Err(AdapterError::EmptyProbabilities);
         }
@@ -142,18 +154,30 @@ impl Adapter {
                 None => return Err(AdapterError::NaNProbability),
             }
         }
-        let probabilities: Vec<(String, f64)> = answer.probabilities.iter().enumerate()
+        let probabilities: Vec<(String, f64)> = answer
+            .probabilities
+            .iter()
+            .enumerate()
             .map(|(i, &p)| (criterion_ids[i].0.clone(), p))
             .collect();
         let winner = criterion_ids[best_idx].0.clone();
         let confidence = Self::compute_confidence(&answer.probabilities);
-        Ok(ChoiceResult { winner, probabilities, confidence })
+        Ok(ChoiceResult {
+            winner,
+            probabilities,
+            confidence,
+        })
     }
 
     fn evaluate_noul(answer: &Answer) -> Result<NoulResult, AdapterError> {
-        let true_idx = answer.keys.iter().position(|k| k == "true")
+        let true_idx = answer
+            .keys
+            .iter()
+            .position(|k| k == "true")
             .ok_or(AdapterError::MissingTrueKey)?;
-        let prob_true = answer.probabilities.get(true_idx)
+        let prob_true = answer
+            .probabilities
+            .get(true_idx)
             .copied()
             .ok_or(AdapterError::EmptyProbabilities)?;
         Ok(NoulResult { prob_true })
@@ -169,14 +193,23 @@ impl Adapter {
                 got: answer.probabilities.len(),
             });
         }
-        let probabilities: Vec<(String, f64)> = levels.iter().map(|l| l.clone())
+        let probabilities: Vec<(String, f64)> = levels
+            .iter()
+            .cloned()
             .zip(answer.probabilities.iter().copied())
             .collect();
-        let expected_score: f64 = answer.probabilities.iter().enumerate()
+        let expected_score: f64 = answer
+            .probabilities
+            .iter()
+            .enumerate()
             .map(|(i, &p)| (i + 1) as f64 * p)
             .sum();
         let confidence = Self::compute_confidence(&answer.probabilities);
-        Ok(ScoreResult { probabilities, expected_score, confidence })
+        Ok(ScoreResult {
+            probabilities,
+            expected_score,
+            confidence,
+        })
     }
 
     /// Serialize adapted answers to JSON (mirrors `julia1::answers_to_json` structure).
@@ -198,16 +231,24 @@ pub fn answers_to_json(answers: &[(String, AdaptedAnswer)]) -> serde_json::Value
 fn adapted_to_json(answer: &AdaptedAnswer) -> serde_json::Value {
     match answer {
         AdaptedAnswer::Choice(c) => {
-            let probs: serde_json::Map<String, serde_json::Value> = c.probabilities.iter()
+            let probs: serde_json::Map<String, serde_json::Value> = c
+                .probabilities
+                .iter()
                 .map(|(k, p)| (k.clone(), serde_json::json!(p)))
                 .collect();
             let mut out = serde_json::Map::new();
             out.insert("type".into(), serde_json::json!("choice"));
             out.insert("probabilities".into(), serde_json::Value::Object(probs));
             out.insert("choice".into(), serde_json::json!(c.winner));
-            out.insert("max_probability".into(), serde_json::json!(
-                c.probabilities.iter().map(|(_, p)| *p).fold(f64::NEG_INFINITY, f64::max)
-            ));
+            out.insert(
+                "max_probability".into(),
+                serde_json::json!(
+                    c.probabilities
+                        .iter()
+                        .map(|(_, p)| *p)
+                        .fold(f64::NEG_INFINITY, f64::max)
+                ),
+            );
             serde_json::Value::Object(out)
         }
         AdaptedAnswer::Noul(n) => {
@@ -217,16 +258,24 @@ fn adapted_to_json(answer: &AdaptedAnswer) -> serde_json::Value {
             serde_json::Value::Object(out)
         }
         AdaptedAnswer::Score(s) => {
-            let probs: serde_json::Map<String, serde_json::Value> = s.probabilities.iter()
+            let probs: serde_json::Map<String, serde_json::Value> = s
+                .probabilities
+                .iter()
                 .map(|(k, p)| (k.clone(), serde_json::json!(p)))
                 .collect();
             let mut out = serde_json::Map::new();
             out.insert("type".into(), serde_json::json!("score"));
             out.insert("probabilities".into(), serde_json::Value::Object(probs));
             out.insert("score".into(), serde_json::json!(s.expected_score));
-            out.insert("max_probability".into(), serde_json::json!(
-                s.probabilities.iter().map(|(_, p)| *p).fold(f64::NEG_INFINITY, f64::max)
-            ));
+            out.insert(
+                "max_probability".into(),
+                serde_json::json!(
+                    s.probabilities
+                        .iter()
+                        .map(|(_, p)| *p)
+                        .fold(f64::NEG_INFINITY, f64::max)
+                ),
+            );
             serde_json::Value::Object(out)
         }
     }

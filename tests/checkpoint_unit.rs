@@ -7,7 +7,7 @@ use std::io::Write;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use decide_rs::checkpoint::{self, FILES, HF_REPO, REVISION, WEIGHTS_SHA256};
+use decide_rs::checkpoint::{self, FILES, HF_REPO, REVISION};
 
 #[test]
 fn download_url_is_revision_pinned_and_never_floating() {
@@ -36,6 +36,8 @@ fn files_are_exactly_the_five_expected_in_order() {
     );
 }
 
+const WEIGHTS_SHA256: &str = "df853bf7fe424420011f3d0c47a05d7341aa9eefa7fb9f203ea4aada4ad95b72";
+
 fn unique_temp_dir() -> PathBuf {
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -62,9 +64,10 @@ fn verify_weights_hash_accepts_correct_and_rejects_wrong_digest() {
         .expect("write fixture");
 
     let correct = format!("{:x}", Sha256::digest(contents));
-    checkpoint::verify_weights_hash(&correct, &path).expect("correct digest must verify");
+    checkpoint::verify_file_hash("fixture.bin", &correct, &path)
+        .expect("correct digest must verify");
 
-    let err = checkpoint::verify_weights_hash(WEIGHTS_SHA256, &path)
+    let err = checkpoint::verify_file_hash("fixture.bin", WEIGHTS_SHA256, &path)
         .expect_err("wrong digest must fail")
         .to_string();
     assert!(err.contains("mismatch"), "unhelpful error: {err}");
@@ -79,7 +82,7 @@ fn verify_weights_hash_accepts_correct_and_rejects_wrong_digest() {
 
     let missing = dir.join("absent.bin");
     assert!(
-        checkpoint::verify_weights_hash(&correct, &missing).is_err(),
+        checkpoint::verify_file_hash("fixture.bin", &correct, &missing).is_err(),
         "missing file must fail"
     );
     fs::remove_dir_all(&dir).ok();
