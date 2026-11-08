@@ -9,7 +9,7 @@
     "prepare": "npm run build"
   },
   "dependencies": {
-    "@earendil-works/pi-coding-agent": "^1.3.0",
+    "@earendil-works/pi-coding-agent": "^1.5.0",
     "@earendil-works/pi-ai": "^1.3.0"
   },
   "devDependencies": {
