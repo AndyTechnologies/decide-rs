@@ -99,3 +99,58 @@ jobs:
           name: decide-rs-release
           path: dist/
           retention-days: 90
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }} - MVP Complete
+          body: |
+            ## decide-rs v0.1.1 - MVP Complete
+
+            ### Binaries (Linux x86_64):
+            - `decide-rs` - CLI for structured decisions (choice/noul/score)
+            - `decide-rs-mcp` - MCP server (stdio + TCP transport)
+            - `decide-rs-download` - Checkpoint downloader
+
+            ### Features:
+            - Local Julia-1 inference via `julia1` crate (no external deps)
+            - MCP Server with stdio/TCP, structuredContent, per-path errors
+            - CLI with subcommands: choice|noul|score|run|demo|fetch
+            - JSON/JSONL input, --model, --lenient, --pretty
+            - Pi extension: pi-decide (installs via pi install)
+            - Auto-setup on install: downloads binaries and model automatically
+
+            ### Installation
+
+            ```bash
+            # From release artifacts
+            curl -L https://github.com/AndyTechnologies/decide-rs/releases/download/v0.1.1/decide-rs-x86_64-unknown-linux-gnu -o ~/.local/bin/decide-rs
+            curl -L https://github.com/AndyTechnologies/decide-rs/releases/download/v0.1.1/decide-rs-mcp-x86_64-unknown-linux-gnu -o ~/.local/bin/decide-rs-mcp
+            chmod +x ~/.local/bin/decide-rs*
+            decide-rs fetch
+
+            # Pi extension
+            pi install github:AndyTechnologies/decide-rs#pi-decide
+            ```
+
+            ### Verification
+
+            ```bash
+            sha256sum -c SHA256SUMS
+            ```
+
+            ### Checkpoint
+
+            Model downloads to `~/.local/share/decide-rs/julia-checkpoint/` (rev `a85b127321d580d65176c89ced8273f305745d85`, SHA256 verified).
+
+            ### License
+
+            MIT
+          files: |
+            dist/*
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
