@@ -3,10 +3,12 @@
   "version": "0.1.0",
   "description": "Pi extension for structured decision-making via decide-rs MCP server",
   "main": "dist/extension.js",
+  "type": "module",
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
-    "prepare": "npm run build"
+    "prepare": "npm run build",
+    "postinstall": "node scripts/postinstall.js"
   },
   "dependencies": {
     "@earendil-works/pi-coding-agent": "^1.3.0",

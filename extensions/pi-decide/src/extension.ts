@@ -35,42 +35,78 @@ Available tools (namespace: \`mcp__decide_rs\`):
 - Before proposing a decision question to the user, evaluate the alternatives yourself
 
 ### How to call
-Each tool takes:
-- \`state\`: A string describing the situation/context (e.g., ticket summary, problem description)
-- \`questions\`: An object with one question:
-  - \`choice\`: { type: "choice", instructions: "...", criteria: { optionId: "description", ... } }
-  - \`noul\`: { type: "noul", instructions: "...", criteria: { false: "label", true: "label" } }
-  - \`score\`: { type: "score", instructions: "...", criteria: ["level1", "level2", ...] }
+Each tool takes a JSON object with exactly two fields:
+- \`state\` (string): A string describing the situation/context
+- \`questions\` (object): A JSON object with ONE key (the question ID) whose value is the question definition
 
-### Example
-\`\`\`typescript
-await mcp__decide_rs__decide_choice({
-  state: "Ticket #4821: checkout payments failing after release. Revenue impact.",
-  questions: {
-    route: {
-      type: "choice",
-      instructions: "Which team should handle this?",
-      criteria: {
-        billing: "Payments, invoices, refunds",
-        platform: "Checkout, API, platform outages",
-        account: "Account access, identity, permissions"
+**⚠️ CRITICAL**: \`questions\` MUST be a JSON OBJECT (not a string), with exactly one key.
+
+Question formats:
+- **choice**: { "type": "choice", "instructions": "...", "criteria": { "optionId": "description", ... } }
+- **noul**: { "type": "noul", "instructions": "...", "criteria": { "false": "label", "true": "label" } }
+- **score**: { "type": "score", "instructions": "...", "criteria": ["level1", "level2", ...] }
+
+### Examples (copy the exact JSON structure)
+
+**decide_choice**:
+\`\`\`json
+{
+  "state": "Ticket #4821: checkout payments failing after release. Revenue impact.",
+  "questions": {
+    "route": {
+      "type": "choice",
+      "instructions": "Which team should handle this?",
+      "criteria": {
+        "billing": "Payments, invoices, refunds",
+        "platform": "Checkout, API, platform outages",
+        "account": "Account access, identity, permissions"
       }
     }
   }
-});
+}
 \`\`\`
 
-### Interpreting results
+**decide_noul**:
+\`\`\`json
+{
+  "state": "Ticket #4821: checkout payments failing after release.",
+  "questions": {
+    "urgent": {
+      "type": "noul",
+      "instructions": "Is this ticket urgent?",
+      "criteria": {
+        "false": "Routine request with no time pressure",
+        "true": "Urgent: revenue impact, outage or same-day deadline"
+      }
+    }
+  }
+}
+\`\`\`
 
-The tool returns a classifier prediction: probabilities per option, the
-highest-probability option, and the expected score for rubrics. That is all
-Julia-1 produces - it emits **no rationale text**.
+**decide_score**:
+\`\`\`json
+{
+  "state": "Customer says: 'I'm frustrated, this is the third time this month!'",
+  "questions": {
+    "frustration": {
+      "type": "score",
+      "instructions": "How frustrated is the customer?",
+      "criteria": [
+        "Calm: neutral wording, no complaints",
+        "Annoyed: mild complaints or repetition",
+        "Angry: explicit anger, threats to cancel or escalation demands"
+      ]
+    }
+  }
+}
+\`\`\`
 
-When reporting to the user:
-- Say "the classifier predicts X with probability P", not "the model thinks X because ...".
-- Your own reasoning about the criteria belongs to you, the agent - keep the two clearly separate.
-- Probabilities are calibration hints, not guarantees of correctness; for consequential decisions say so explicitly and invite verification of the context before acting.
-- Mixed-type requests are rejected; one tool call per decision type.
+### Common mistakes to avoid
+- ❌ DON'T pass \`questions\` as a JSON string (e.g., "questions": "{...}")
+- ❌ DON'T put multiple questions in one call (each tool handles ONE question type)
+- ❌ DON'T mix question types in one tool call (use the correct tool for each type)
+- ✅ DO pass \`questions\` as a JSON object with exactly one key
+- ✅ DO use the correct tool for the question type (choice/noul/score)
 `.trim();
 
 /** Determine the path to the decide-rs-mcp binary. */
@@ -90,7 +126,6 @@ function resolveBinaryPath(): string {
   return DEFAULT_BINARY;
 }
 
-/** Determine the model checkpoint path. */
 /** Determine the model checkpoint path (mirrors the binary's resolution: env var, then the installed location). */
 function resolveModelPath(): string {
   const envPath = process.env.DECIDE_RS_MODEL_PATH;

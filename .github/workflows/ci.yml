@@ -70,68 +70,130 @@ jobs:
       - name: Build
         run: npm run build
 
-  release:
-    name: Create release artifacts
+  build-multiplatform:
+    name: Build release binaries (${{ matrix.os }})
     needs: [rust, typescript]
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            bin-suffix: x86_64-unknown-linux-gnu
+            platform-key: linux-x86_64
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            bin-suffix: x86_64-apple-darwin
+            platform-key: macos-x86_64
+          - os: macos-14
+            target: aarch64-apple-darwin
+            bin-suffix: aarch64-apple-darwin
+            platform-key: macos-arm64
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            bin-suffix: x86_64-pc-windows-msvc
+            platform-key: windows-x86_64
+    runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install Rust
+      - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
+        with:
+          target: ${{ matrix.target }}
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}-${{ matrix.target }}
 
       - name: Build release
-        run: cargo build --release --locked
+        run: cargo build --release --locked --target ${{ matrix.target }}
 
       - name: Package binaries
+        shell: bash
         run: |
           mkdir -p dist
-          cp target/release/decide-rs dist/decide-rs-x86_64-unknown-linux-gnu
-          cp target/release/decide-rs-mcp dist/decide-rs-mcp-x86_64-unknown-linux-gnu
-          cp target/release/decide-rs-download dist/decide-rs-download-x86_64-unknown-linux-gnu
-          sha256sum dist/* > dist/SHA256SUMS
+          EXT=""
+          if [[ "${{ matrix.os }}" == "windows-latest" ]]; then EXT=".exe"; fi
+          cp target/${{ matrix.target }}/release/decide-rs${EXT} dist/decide-rs-${{ matrix.bin-suffix }}${EXT}
+          cp target/${{ matrix.target }}/release/decide-rs-mcp${EXT} dist/decide-rs-mcp-${{ matrix.bin-suffix }}${EXT}
+          cp target/${{ matrix.target }}/release/decide-rs-download${EXT} dist/decide-rs-download-${{ matrix.bin-suffix }}${EXT}
+          # Generate checksums
+          sha256sum dist/* > dist/SHA256SUMS-${{ matrix.platform-key }}.txt
+          cat dist/SHA256SUMS-${{ matrix.platform-key }}.txt
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: decide-rs-release
+          name: decide-rs-${{ matrix.platform-key }}
           path: dist/
           retention-days: 90
 
+  release:
+    name: Create GitHub Release
+    needs: [build-multiplatform]
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: decide-rs-*
+          path: dist/
+          merge-multiple: true
+
+      - name: Consolidate checksums
+        shell: bash
+        run: |
+          cd dist
+          cat SHA256SUMS-*.txt > SHA256SUMS 2>/dev/null || true
+          echo '=== Consolidated SHA256SUMS ==='
+          cat SHA256SUMS
+
       - name: Create release
         uses: softprops/action-gh-release@v2
-        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
         with:
           tag_name: ${{ github.ref_name }}
-          name: ${{ github.ref_name }} - MVP Complete
+          name: ${{ github.ref_name }}
           body: |
-            ## decide-rs v0.1.1 - MVP Complete
+            ## decide-rs ${{ github.ref_name }}
 
-            ### Binaries (Linux x86_64):
-            - `decide-rs` - CLI for structured decisions (choice/noul/score)
-            - `decide-rs-mcp` - MCP server (stdio + TCP transport)
-            - `decide-rs-download` - Checkpoint downloader
+            ### Binaries
+            | Platform | decide-rs | decide-rs-mcp | decide-rs-download |
+            |----------|-----------|---------------|-------------------|
+            | Linux x86_64 | [download](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/decide-rs-x86_64-unknown-linux-gnu) | [download](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/decide-rs-mcp-x86_64-unknown-linux-gnu) | [download](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/decide-rs-download-x86_64-unknown-linux-gnu) |
+            | macOS x86_64 | [download](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/decide-rs-x86_64-apple-darwin) | [download](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/decide-rs-mcp-x86_64-apple-darwin) | [download](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/decide-rs-download-x86_64-apple-darwin) |
+            | macOS arm64 | [download](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/decide-rs-aarch64-apple-darwin) | [download](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/decide-rs-mcp-aarch64-apple-darwin) | [download](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/decide-rs-download-aarch64-apple-darwin) |
+            | Windows x86_64 | [download](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/decide-rs-x86_64-pc-windows-msvc.exe) | [download](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/decide-rs-mcp-x86_64-pc-windows-msvc.exe) | [download](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/decide-rs-download-x86_64-pc-windows-msvc.exe) |
 
-            ### Features:
+            ### Features
             - Local Julia-1 inference via `julia1` crate (no external deps)
-            - MCP Server with stdio/TCP, structuredContent, per-path errors
+            - MCP Server with stdio transport, structuredContent, per-path errors
             - CLI with subcommands: choice|noul|score|run|demo|fetch
             - JSON/JSONL input, --model, --lenient, --pretty
-            - Pi extension: pi-decide (installs via pi install)
+            - Pi extension: pi-decide (installs via `pi install`)
             - Auto-setup on install: downloads binaries and model automatically
 
             ### Installation
 
+            **From release artifacts (Linux x86_64 example):**
             ```bash
-            # From release artifacts
-            curl -L https://github.com/AndyTechnologies/decide-rs/releases/download/v0.1.1/decide-rs-x86_64-unknown-linux-gnu -o ~/.local/bin/decide-rs
-            curl -L https://github.com/AndyTechnologies/decide-rs/releases/download/v0.1.1/decide-rs-mcp-x86_64-unknown-linux-gnu -o ~/.local/bin/decide-rs-mcp
+            curl -L https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/decide-rs-x86_64-unknown-linux-gnu -o ~/.local/bin/decide-rs
+            curl -L https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/decide-rs-mcp-x86_64-unknown-linux-gnu -o ~/.local/bin/decide-rs-mcp
             chmod +x ~/.local/bin/decide-rs*
             decide-rs fetch
+            ```
 
-            # Pi extension
+            **Pi extension:**
+            ```bash
             pi install github:AndyTechnologies/decide-rs#pi-decide
             ```
 
