@@ -81,14 +81,6 @@ jobs:
             target: x86_64-unknown-linux-gnu
             bin-suffix: x86_64-unknown-linux-gnu
             platform-key: linux-x86_64
-          - os: macos-latest
-            target: x86_64-apple-darwin
-            bin-suffix: x86_64-apple-darwin
-            platform-key: macos-x86_64
-          - os: macos-13
-            target: aarch64-apple-darwin
-            bin-suffix: aarch64-apple-darwin
-            platform-key: macos-arm64
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             bin-suffix: x86_64-pc-windows-msvc
@@ -170,8 +162,6 @@ jobs:
             | Platform | decide-rs | decide-rs-mcp | decide-rs-download |
             |----------|-----------|---------------|-------------------|
             | Linux x86_64 | [download](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/decide-rs-x86_64-unknown-linux-gnu) | [download](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/decide-rs-mcp-x86_64-unknown-linux-gnu) | [download](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/decide-rs-download-x86_64-unknown-linux-gnu) |
-            | macOS x86_64 | [download](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/decide-rs-x86_64-apple-darwin) | [download](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/decide-rs-mcp-x86_64-apple-darwin) | [download](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/decide-rs-download-x86_64-apple-darwin) |
-            | macOS arm64 | [download](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/decide-rs-aarch64-apple-darwin) | [download](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/decide-rs-mcp-aarch64-apple-darwin) | [download](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/decide-rs-download-aarch64-apple-darwin) |
             | Windows x86_64 | [download](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/decide-rs-x86_64-pc-windows-msvc.exe) | [download](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/decide-rs-mcp-x86_64-pc-windows-msvc.exe) | [download](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/decide-rs-download-x86_64-pc-windows-msvc.exe) |
 
             ### Features
