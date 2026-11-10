@@ -85,7 +85,7 @@ jobs:
             target: x86_64-apple-darwin
             bin-suffix: x86_64-apple-darwin
             platform-key: macos-x86_64
-          - os: macos-14
+          - os: macos-13
             target: aarch64-apple-darwin
             bin-suffix: aarch64-apple-darwin
             platform-key: macos-arm64
