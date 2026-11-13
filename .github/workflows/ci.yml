@@ -186,7 +186,7 @@ jobs:
 
             **Pi extension:**
             ```bash
-            pi install github:AndyTechnologies/decide-rs#pi-decide
+            pi install https://github.com/AndyTechnologies/decide-rs
             ```
 
             ### Verification
