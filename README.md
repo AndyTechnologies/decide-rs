@@ -41,9 +41,11 @@ The `pi-decide` extension registers the MCP server with Pi and adds system instr
 
 **Option 1: Auto-setup via Pi (recommended)**
 ```bash
-pi install github:AndyTechnologies/decide-rs#pi-decide
+pi install https://github.com/AndyTechnologies/decide-rs
 ```
 This downloads binaries and the Julia-1 model automatically on first install.
+
+> **Nota:** Pi no soporta la sintaxis `github:owner/repo#extension`. Usá la URL completa del repositorio.
 
 **Option 2: Manual installation**
 ```bash

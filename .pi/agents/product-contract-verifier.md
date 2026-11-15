@@ -1,6 +1,8 @@
 ---
 name: product-contract-verifier
 description: "Read-only contractual verifier for product-quest contracts. Verifies implementation satisfies the accepted product contract before changelog generation. Does not perform generic product review."
+model: freeflow/nvidia/nemotron-3.5-lightning:free
+thinking: xhigh
 tools:
   - read
   - grep

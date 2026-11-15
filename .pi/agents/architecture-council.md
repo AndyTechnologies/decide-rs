@@ -1,6 +1,8 @@
 ---
 name: architecture-council
 description: "Read-only contractual verifier for architecture-quest contracts. Verifies implementation satisfies the accepted architectural contract before RDD review. Does not perform generic architecture review."
+model: freeflow/nvidia/nemotron-3.5-lightning:free
+thinking: high
 tools:
   - read
   - grep
